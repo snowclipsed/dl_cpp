@@ -3,6 +3,14 @@
 
 #include <fstream>
 
+Data::Data(){
+    features_RC = new std::vector <uint8_t>; // initialize the feature vector
+}
+
+Data::~Data(){
+    delete features_RC; // delete the feature vector
+}
+
 void Data::set_features(std::vector <uint8_t> *vector){
     features_RC = vector; // setter for feature vector
 }

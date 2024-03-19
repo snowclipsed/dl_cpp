@@ -16,13 +16,13 @@ class data_handler {
     /*
     This class will load and split the data into train test and validation.
     */
-    std::vector <Data *> data; // all the data stored in this variable
+    std::vector <Data *> *data; // all the data stored in this variable
     
     // we will then split into the corresponding train test and validation sets
 
-    std::vector <Data *> train;
-    std::vector <Data *> test;
-    std::vector <Data *> validation;
+    std::vector <Data *> *train;
+    std::vector <Data *> *test;
+    std::vector <Data *> *validation;
 
 
     int num_classes;

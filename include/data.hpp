@@ -23,6 +23,8 @@ class Data {
 
 
     public:
+    Data();
+    ~Data();
     void set_features(std::vector <uint8_t> *);
     void set_classlabel(uint8_t);
     void set_enumerated_classlabel(int);
