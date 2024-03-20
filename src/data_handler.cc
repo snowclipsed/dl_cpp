@@ -99,11 +99,69 @@ void data_handler::load_feature_labels(std::string PATH){
         }
 }
 void data_handler::split_data(){
+std::unordered_set<int> used_index;
+int train_size = data->size() * TRAINSET_PERCENT;
+int test_size = data->size() * TESTSET_PERCENT;
+int validation_size = data->size() * VALIDATIONSET_PERCENT;
 
-    
-    
+int count = 0;
+while(count<train_size){
+
+    int rand_index = rand() * data->size();
+    if(used_index.find(rand_index) == used_index.end()) // check if the find function returns the end of the set                                                        
+                                                        //if yes then the index is not in the set
+    {
+        train->push_back(data->at(rand_index));
+        used_index.insert(rand_index);
+        count++;
+    }else{continue;}
+    }
+
+printf("Successfully split the data into train set\n");
+printf("Train size: %lu", train->size());
+
+count = 0;
+while(count<test_size){
+
+    int rand_index = rand() * data->size();
+    if(used_index.find(rand_index) == used_index.end()) // check if the find function returns the end of the set                                                        
+                                                        //if yes then the index is not in the set
+    {
+        test->push_back(data->at(rand_index));
+        used_index.insert(rand_index);
+        count++;
+    }else{continue;}
 }
-void data_handler::class_counter();
+
+printf("Successfully split the data into test set\n");
+printf("Test size: %lu", test->size());
+
+count = 0;
+while(count<validation_size){
+
+    int rand_index = rand() * data->size();
+    if(used_index.find(rand_index) == used_index.end()) // check if the find function returns the end of the set                                                        
+                                                        //if yes then the index is not in the set
+    {
+        validation->push_back(data->at(rand_index));
+        used_index.insert(rand_index);
+        count++;
+    }else{continue;}
+}
+printf("Successfully split the data into validation set\n");
+printf("Validation size: %lu", validation->size());
+        
+}
+void data_handler::class_counter(){
+    int count = 0;
+
+    for(unsigned i=0; i<data->size(); i++){
+        if(class_label_map.find(data->at(i)->get_class_label()) == class_label_map.end()){
+            class_label_map[data->at(i)->get_class_label()] = count;
+            data->at(i)->set_enumerated_classlabel(count);
+            count++;
+    }
+}
 
 uint32_t get_little_endian(const unsigned char * bytes);
 
