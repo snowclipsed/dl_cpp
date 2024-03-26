@@ -160,11 +160,21 @@ void data_handler::class_counter(){
             class_label_map[data->at(i)->get_class_label()] = count;
             data->at(i)->set_enumerated_classlabel(count);
             count++;
+        }
     }
 }
 
-uint32_t get_little_endian(const unsigned char * bytes);
+uint32_t data_handler::get_little_endian(const unsigned char * bytes){
+    return (uint32_t) ((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | (bytes[3]));
 
-std::vector <Data *> get_train();
-std::vector <Data *> get_test();
-std::vector <Data *> get_validation();
+}
+
+std::vector <Data *> data_handler::get_train(){
+    return *train;
+}
+std::vector <Data *> data_handler::get_test(){
+    return *test;
+}
+std::vector <Data *> data_handler::get_validation(){
+    return *validation;
+}
