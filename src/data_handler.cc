@@ -163,6 +163,9 @@ void data_handler::class_counter(){
             count++;
         }
     }
+    num_classes = count;
+    printf("Class label map created\n");
+    printf("Number of classes: %d\n", num_classes);
 }
 
 uint32_t data_handler::get_little_endian(const unsigned char * bytes){
