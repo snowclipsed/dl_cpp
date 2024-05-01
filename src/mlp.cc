@@ -4,6 +4,7 @@
 #include <vector>
 #include "stdio.h"
 #include "stdint.h"
+#include <cmath>
 #include <ctime>
 
 
@@ -29,6 +30,8 @@ class mlp{
         network_params* params;
         network_params* init_network();
         double random_double();
+        double sigmoid_activation(double x);
+        void forward_pass();
 };
 
 mlp::mlp(){
@@ -76,6 +79,20 @@ mlp::network_params* mlp::init_network(){
 
    return params;
 }
+
+
+double mlp::sigmoid_activation(double x){
+
+    x = 1 / (1 + exp(x * -1));
+    printf("Activation is : %f \n", x);
+    return x;
+}
+
+
+void mlp::forward_pass(){
+
+}
+
 
 int main(){
     mlp *nn = new mlp();
