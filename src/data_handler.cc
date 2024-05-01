@@ -183,13 +183,13 @@ std::vector <Data *> data_handler::get_validation(){
     return *validation;
 }
 
-int main(){
-    data_handler *dh = new data_handler();
-    dh->load_feature_vectors("/home/snow/learn/dl_cpp/data/train-images.idx3-ubyte");
-    dh->load_feature_labels("/home/snow/learn/dl_cpp/data/train-labels.idx1-ubyte");
-    dh->split_data();
-    dh->class_counter();
-}
+// int main(){
+//     data_handler *dh = new data_handler();
+//     dh->load_feature_vectors("/home/snow/learn/dl_cpp/data/train-images.idx3-ubyte");
+//     dh->load_feature_labels("/home/snow/learn/dl_cpp/data/train-labels.idx1-ubyte");
+//     dh->split_data();
+//     dh->class_counter();
+// }
 
 // g++ -std=c++11 -I./include/ -o main ./src/* to compile main!!
 // ./main to run the program !!
