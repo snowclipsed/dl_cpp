@@ -1,5 +1,6 @@
 #include "data_handler.hpp"
 #include "data.hpp"
+#include "loguru.hpp"
 
 data_handler::data_handler()
 {
@@ -35,7 +36,7 @@ void data_handler::load_feature_vectors(std::string PATH){
                 header[i] = get_little_endian(bytes); //convert bytes to little endian
             }
         }
-        printf("File header obtained: %d %d %d %d\n", header[0], header[1], header[2], header[3]);
+        LOG_F(0, "File header obtained: %d | %d | %d | %d", header[0], header[1], header[2], header[3]);
         /**
          * 
          * First we will read the pixel data from a file stream 
@@ -52,17 +53,23 @@ void data_handler::load_feature_vectors(std::string PATH){
                     d->append_features(pixel[0]); // append the pixel to the feature vector
                 }
                 else{
-                    printf("Error reading pixel data from file\n");
+                    LOG_F(ERROR, "Error reading pixel data from file");
                     exit(1);
                 }
             }
             data->push_back(d); // we then push the data object into the data vector
-            printf("Read pixels for image %d \n", i+1);
+            // LOG_F(0, "Read pixels for image %d ", i+1);
         }
-        printf("Read all data and stored in %lu", data->size());
+        
+        if(header[1] != data->size()){
+            LOG_F(ERROR, "Data size mismatch.");
+            LOG_F(0, "Data size = %lu", data->size());
+            LOG_F(0, "Data size should be: %d", header[1]);
+        }
+        LOG_F(0, "Read all data. Data size = %lu \n", data->size());
     }  
     else{
-        printf("Error opening first file\n");
+        LOG_F(ERROR, "Error opening first file");
         exit(1);
     }
 }
@@ -70,32 +77,37 @@ void data_handler::load_feature_vectors(std::string PATH){
 
 void data_handler::load_feature_labels(std::string PATH){
     uint32_t header[2];
-    unsigned char bytes[2];
+    unsigned char bytes[4];
     FILE *file = fopen(PATH.c_str(), "r");
     if (file){
         for(int i=0; i<2; i++){
             if(fread(bytes, sizeof(bytes), 1, file)){
                 header[i] = get_little_endian(bytes);
             }else{
-                printf("Error reading label file\n");
+                LOG_F(ERROR, "Error reading label file");
                 exit(1);
             }
         }
-        printf("Label File header obtained: %d %d\n", header[0], header[1]);
-        printf("data size: %lu\n", data->size());
-            for(int i=0; i<data->size(); i++){
+        LOG_F(0, "Label File header obtained: %d | %d", header[0], header[1]);
+            for(int i=0; i<header[1]; i++){
                 uint8_t label[1];
                 if(fread(label, sizeof(label), 1, file)){
                         data->at(i)->set_classlabel(label[0]);
-                        printf("Read label %d as %d \n", i+1, label[0]);
                 }else{
-                    printf("Error reading label data from file\n");
+                    LOG_F(ERROR, "Error reading label data from file");
                     exit(1);
                 }
             }
-            printf("Read all labels and stored in %lu \n", data->size());
+
+            if(header[1] != data->size()){
+                    LOG_F(ERROR, "Data size mismatch.");
+                    LOG_F(0, "Data size = %lu", data->size());
+                    LOG_F(0, "Data size should be: %d", header[1]);
+                }
+            LOG_F(0, "Read and stored %lu labels \n", data->size());
+
         }else{
-        printf("Error opening file\n");
+        LOG_F(ERROR, "Error opening file");
         exit(1);
         }
 }
@@ -118,8 +130,8 @@ void data_handler::split_data(){
         }else{continue;}
         }
 
-    printf("Successfully split the data into train set\n");
-    printf("Train size: %lu \n", train->size());
+    LOG_F(0, "Successfully split the data into train set");
+    LOG_F(0, "Train size: %lu ", train->size());
 
     count = 0;
     while(count<test_size){
@@ -134,8 +146,8 @@ void data_handler::split_data(){
         }else{continue;}
     }
 
-    printf("Successfully split the data into test set\n");
-    printf("Test size: %lu \n", test->size());
+    LOG_F(0, "Successfully split the data into test set");
+    LOG_F(0, "Test size: %lu ", test->size());
 
     count = 0;
     while(count<validation_size){
@@ -149,8 +161,8 @@ void data_handler::split_data(){
             count++;
         }else{continue;}
     }
-    printf("Successfully split the data into validation set\n");
-    printf("Validation size: %lu \n", validation->size());
+    LOG_F(0, "Successfully split the data into validation set");
+    LOG_F(0, "Validation size: %lu \n", validation->size());
         
 }
 void data_handler::class_counter(){
@@ -164,13 +176,16 @@ void data_handler::class_counter(){
         }
     }
     num_classes = count;
-    printf("Class label map created\n");
-    printf("Number of classes: %d\n", num_classes);
+    LOG_F(0, "Class label map created");
+    // LOG_F(0, "Here are the classes:");
+    // for (const auto& pair : class_label_map) {
+    //     LOG_F(0, "%d", pair.first);
+    // }
+    LOG_F(0, "Number of classes: %d \n", num_classes);
 }
 
 uint32_t data_handler::get_little_endian(const unsigned char * bytes){
     return (uint32_t) ((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | (bytes[3]));
-
 }
 
 std::vector <Data *> data_handler::get_train(){

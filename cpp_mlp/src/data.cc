@@ -1,5 +1,6 @@
 #include "data.hpp"
 #include "data_handler.hpp"
+#include "loguru.hpp"
 
 #include <fstream>
 
@@ -38,6 +39,7 @@ uint8_t Data::get_class_label(){
 
 uint8_t Data::get_enumerated_class_label(){
     return enum_label_E; // return the enumerated class label
+    LOG_F(0, "LABEL : %d", enum_label_E);
 }
 
 std::vector<uint8_t> * Data::get_features(){

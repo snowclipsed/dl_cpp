@@ -1,5 +1,6 @@
 // #include "data_handler.hpp"
 // #include "data.hpp"
+#include "data_handler.hpp"
 #include <cstdlib>
 #include <vector>
 #include "stdio.h"
@@ -140,12 +141,21 @@ return Z;
 
 
 void mlp::forward_pass(){
-
+    /*
+     * 
+    */
 
 }
 
 
 int main(){
+
+    data_handler *dh = new data_handler();
+    dh->load_feature_vectors("/home/snow/learn/dl_cpp/cpp_mlp/dataset/train-images-idx3-ubyte");
+    dh->load_feature_labels("/home/snow/learn/dl_cpp/cpp_mlp/dataset/train-labels-idx1-ubyte");
+    dh->split_data();
+    dh->class_counter();
+
     mlp *nn = new mlp();
     nn->init_network();
 
