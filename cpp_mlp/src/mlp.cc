@@ -37,8 +37,8 @@ class mlp{
         double* random_double();
         double sigmoid_activation(double x);
         double relu_activation(double x);
-        void forward_pass(network_params* params);
-        std::vector<double> mat_mul(std::vector<double> in, std::vector<double> weights, std::vector<double> biases, std::vector<double>out, int activation);
+        void forward_pass(network_params* params, std::vector<Data*> train);
+        std::vector<double*> mat_mul(std::vector<double*> X, int X_start, int X_end, std::vector<double*> W, int W_start, int W_end, std::vector<double*> B, std::vector<double*> Z, int Z_start, int Z_end, int activation);
 };
 
 mlp::mlp(){
@@ -110,7 +110,7 @@ double mlp::relu_activation(double x){
 
 
 
-std::vector<double> mlp::mat_mul(std::vector<double> X, std::vector<double> W, std::vector<double> B, std::vector<double> Z, int activation){
+std::vector<double*> mlp::mat_mul(std::vector<double*> X, int X_start, int X_end, std::vector<double*> W, int W_start, int W_end, std::vector<double*> B, std::vector<double*> Z, int Z_start, int Z_end, int activation){
 /**
  * X = Input matrix 
  * Z = Output matrix
@@ -130,29 +130,52 @@ std::vector<double> mlp::mat_mul(std::vector<double> X, std::vector<double> W, s
  * 
  *
 */
-    for (int i = 0; i<Z.size(); i++){
+
+
+    for (int i = 0; i<Z_end-Z_start; i++){
         double sum = 0.0;
-        for(int j =0; j<X.size(); j++){
-            sum += X[j]*W[X.size()*i+j];
+        for(int j = 0; j<X_end-X_start; j++){
+            sum += *X[X_start+j] * *W[W_start+(X_end-X_start)*i+j];
+            // offset of 784 * 256
         }
         switch(activation){
 
         case 1:
-            Z[i] = sigmoid_activation(sum + B[i]);
-            LOG_F(0, "Using sigmoid activation.");
+            *Z[Z_start+i] = sigmoid_activation(sum + *B[Z_start+i]);
+            // LOG_F(0, "Z = %f", *Z[i]);
+            // LOG_F(0, "Using sigmoid activation.");
+            break;
         case 2:
-            Z[i] = relu_activation(sum + B[i]);
-            LOG_F(0, "Using ReLU activation.");
+            *Z[Z_start+i] = relu_activation(sum + *B[Z_start+i]);
+            // LOG_F(0, "Z = %f", *Z[i]);
+            // LOG_F(0, "Using ReLU activation.");
+            break;
         default:
-            Z[i] = sigmoid_activation(sum + B[i]);
-            LOG_F(0, "Using sigmoid activation.");
+            *Z[Z_start+i] = sigmoid_activation(sum + *B[Z_start+i]);
+            // LOG_F(0, "Z = %f", *Z[i]);
+            // LOG_F(0, "Using sigmoid activation.");
+            break;
         }
     }
 return Z;
 }
 
 
-void mlp::forward_pass(network_params* params){
+std::vector<double*> convertVector(const std::vector<uint8_t>* input) {
+    // LOG_F(0, "Converting uint_8* vector to double* vector");
+    std::vector<double*> output;
+    output.reserve(input->size());  // Reserve memory for efficiency
+
+    for (uint8_t value : *input) {
+        double* ptr = new double(static_cast<double>(value));
+        output.push_back(ptr);
+    }
+    // LOG_F(0, "Converted uint_8* vector to double* vector");
+    return output;
+}
+
+
+void mlp::forward_pass(network_params* params, std::vector<Data*> train){
     /**
      * Forward pass takes input image vector and calculates the values for the activations for different layers.
      * First we calculate the weights and activations for the first hidden layer, then we use those activations for second hidden layer, 
@@ -162,12 +185,48 @@ void mlp::forward_pass(network_params* params){
    //Between input layer and first hidden layer
 
     // Z = first hidden, X = input, W = weights
-
     
+    for(int i = 0; i<train.size(); i++){
+        // initially we put in the input vector of size 784 into the first hidden layer of size 256.
+        int X_start = 0;
+        int X_end = INPUT_DIM;
+        int Z_start = 0;
+        int Z_end = HIDDEN_LAYER_SIZE;
+        int W_start = 0;
+        int W_end = INPUT_DIM * HIDDEN_LAYER_SIZE;
+        // LOG_F(0, "%d, %d, %d, %d, %d, %d", X_start, X_end, Z_start, Z_end, W_start, W_end);
+        mat_mul(convertVector(train[i]->get_features()), 0, INPUT_DIM, params->weights, X_start, X_end, params->biases, params->activations, Z_start, Z_end, 2);
+        // LOG_F(0, "Input layer for image number : %d", i);
+
+        
+
+        for (int layer = 0; layer<NUM_HIDDEN_LAYERS-1; layer++){
+           X_start = Z_start;
+           X_end = Z_end;
+           Z_start = Z_end;
+           Z_end += HIDDEN_LAYER_SIZE;
+           W_start = W_end;
+           W_end += HIDDEN_LAYER_SIZE * HIDDEN_LAYER_SIZE; 
+
+            // LOG_F(0, "%d, %d, %d, %d, %d, %d", X_start, X_end, Z_start, Z_end, W_start, W_end);
+            mat_mul(params->activations, X_start, X_end, params->weights, W_start, W_end, params->biases, params->activations, Z_start, Z_end, 2);
+            // LOG_F(0, "Hidden layer %d for image number : %d", layer+1, i);
+        }
+
+            X_start = HIDDEN_LAYER_SIZE * (NUM_HIDDEN_LAYERS-1);
+            X_end = HIDDEN_LAYER_SIZE * NUM_HIDDEN_LAYERS;
+            Z_start = HIDDEN_LAYER_SIZE * NUM_HIDDEN_LAYERS;
+            Z_end = HIDDEN_LAYER_SIZE * NUM_HIDDEN_LAYERS + OUTPUT_DIM;
+            W_start = INPUT_DIM * HIDDEN_LAYER_SIZE + HIDDEN_LAYER_SIZE*HIDDEN_LAYER_SIZE*(NUM_HIDDEN_LAYERS-1);
+            W_end = INPUT_DIM * HIDDEN_LAYER_SIZE + HIDDEN_LAYER_SIZE*HIDDEN_LAYER_SIZE*(NUM_HIDDEN_LAYERS-1) + HIDDEN_LAYER_SIZE*OUTPUT_DIM;
+            // LOG_F(0, "%d, %d, %d, %d, %d, %d", X_start, X_end, Z_start, Z_end, W_start, W_end);
+            mat_mul(params->activations, X_start, X_end, params->weights, W_start, W_end, params->biases, params->activations, Z_start, Z_end, 1);
+
+    LOG_F(0, "Forward pass for image : %d", i);
+    }
 
 
     // for (int i = 0; i<NUM_HIDDEN_LAYERS; i++)
-
 }
 
 
@@ -181,12 +240,6 @@ int main(){
 
     mlp *nn = new mlp();
     nn->init_network(nn->params);
-
-    // std::vector<double> X = {1.0,2.0,3.0,4.0};
-    // std::vector<double> W = {1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0,11.0,12.0};
-    // std::vector<double> B = {0.0,0.0,0.0};
-    // std::vector<double> Z = {0.0,0.0,0.0};
-    // nn->mat_mul(X,W,B,Z,0);
-
+    nn->forward_pass(nn->params, dh->get_train());
 
 }
