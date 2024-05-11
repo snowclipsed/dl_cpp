@@ -32,7 +32,7 @@ class Data {
 
     int get_feature_vector_size();
     uint8_t get_class_label();
-    uint8_t get_enumerated_class_label();
+    int get_enumerated_class_label();
 
 
     // getters
