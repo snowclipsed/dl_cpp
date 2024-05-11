@@ -40,7 +40,7 @@ class data_handler {
     void load_feature_vectors(std::string PATH);
     void load_feature_labels(std::string PATH);
     void split_data();
-    void class_counter();
+    int class_counter();
 
     uint32_t get_little_endian(const unsigned char * bytes);
 
