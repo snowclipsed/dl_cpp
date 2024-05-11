@@ -24,6 +24,8 @@ class mlp{
         std::vector<double*> weights;
         std::vector<double*> biases;
         std::vector<double*> activations;
+        std::vector<double*> pred;
+        std::vector<double*> true_pred;
         int num_activations;
         int num_weights;
         int num_biases;
@@ -33,11 +35,12 @@ class mlp{
         mlp();
         ~mlp();
         network_params* params;
-        network_params* init_network(network_params* params);
+        network_params* init_network(network_params* params, std::vector<Data*> train);
         double* random_double();
         double sigmoid_activation(double x);
         double relu_activation(double x);
         void forward_pass(network_params* params, std::vector<Data*> train);
+        void create_one_hot(network_params* params, std::vector<Data*> train, int num_classes);
         std::vector<double*> mat_mul(std::vector<double*> X, int X_start, int X_end, std::vector<double*> W, int W_start, int W_end, std::vector<double*> B, std::vector<double*> Z, int Z_start, int Z_end, int activation);
 };
 
@@ -57,7 +60,7 @@ double* mlp::random_double(){
     return rnum; // return a randoconst std::string& activationm double value between 0 and 1
 }
 
-mlp::network_params* mlp::init_network(network_params* params){
+mlp::network_params* mlp::init_network(network_params* params, std::vector<Data*> train){
     /**
      * To write an init function first we need to allocate memory for the weights using malloc.
     */
@@ -221,12 +224,44 @@ void mlp::forward_pass(network_params* params, std::vector<Data*> train){
             W_end = INPUT_DIM * HIDDEN_LAYER_SIZE + HIDDEN_LAYER_SIZE*HIDDEN_LAYER_SIZE*(NUM_HIDDEN_LAYERS-1) + HIDDEN_LAYER_SIZE*OUTPUT_DIM;
             // LOG_F(0, "%d, %d, %d, %d, %d, %d", X_start, X_end, Z_start, Z_end, W_start, W_end);
             mat_mul(params->activations, X_start, X_end, params->weights, W_start, W_end, params->biases, params->activations, Z_start, Z_end, 1);
-
+            params->pred.insert(params->pred.end(), params->activations.end()-10, params->activations.end());
     LOG_F(0, "Forward pass for image : %d", i);
     }
 
+LOG_F(0, "Forward pass completed.");
+}
 
-    // for (int i = 0; i<NUM_HIDDEN_LAYERS; i++)
+void mlp::create_one_hot(network_params* params, std::vector<Data*> train, int num_classes){
+    
+    for(int image = 0; image<train.size(); image++){
+        for(int classlabel = 0 ; classlabel < num_classes; classlabel++){
+            if (train[image]->get_enumerated_class_label() == classlabel){
+                double labelvalue = static_cast<double>(train[image]->get_enumerated_class_label());
+                double* label_ptr = new double(labelvalue);
+                params->true_pred.push_back(label_ptr);
+            }else{
+                double labelvalue = 0.00;
+                double* label_ptr = new double(labelvalue);
+                params->true_pred.push_back(label_ptr);
+            }
+        }
+        LOG_F(0, "One hot vector created for image %d", image);
+    }
+}
+
+double cross_entropy_loss(std::vector<double*> pred, std::vector<int> label){
+    double loss = 0.0;
+
+    for(int i = 0; i < label.size(); i++){
+        
+    }
+
+    return loss;
+}
+
+
+void backward_pass(){
+
 }
 
 
@@ -236,10 +271,13 @@ int main(){
     dh->load_feature_vectors("/home/snow/learn/dl_cpp/cpp_mlp/dataset/train-images-idx3-ubyte");
     dh->load_feature_labels("/home/snow/learn/dl_cpp/cpp_mlp/dataset/train-labels-idx1-ubyte");
     dh->split_data();
-    dh->class_counter();
+    int num_classes = dh->class_counter();
 
     mlp *nn = new mlp();
-    nn->init_network(nn->params);
+    nn->init_network(nn->params, dh->get_train());
+    nn->create_one_hot(nn->params, dh->get_train(), num_classes);
     nn->forward_pass(nn->params, dh->get_train());
+    LOG_F(0, "%ld", dh->get_train().size());
+    LOG_F(0, "%ld", nn->params->pred.size());
 
 }
