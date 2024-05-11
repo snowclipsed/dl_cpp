@@ -37,7 +37,7 @@ uint8_t Data::get_class_label(){
     return class_label_L; // return the class label
 }
 
-uint8_t Data::get_enumerated_class_label(){
+int Data::get_enumerated_class_label(){
     return enum_label_E; // return the enumerated class label
     LOG_F(0, "LABEL : %d", enum_label_E);
 }

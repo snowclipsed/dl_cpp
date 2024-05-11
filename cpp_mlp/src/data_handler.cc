@@ -165,7 +165,7 @@ void data_handler::split_data(){
     LOG_F(0, "Validation size: %lu \n", validation->size());
         
 }
-void data_handler::class_counter(){
+int data_handler::class_counter(){
     int count = 0;
 
     for(unsigned i=0; i<data->size(); i++){
@@ -182,6 +182,7 @@ void data_handler::class_counter(){
     //     LOG_F(0, "%d", pair.first);
     // }
     LOG_F(0, "Number of classes: %d \n", num_classes);
+    return count;
 }
 
 uint32_t data_handler::get_little_endian(const unsigned char * bytes){
