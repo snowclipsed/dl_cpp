@@ -17,7 +17,7 @@
 #define OUTPUT_DIM 10
 #define HIDDEN_LAYER_SIZE 256
 #define NUM_HIDDEN_LAYERS 3
-#define BATCH_SIZE 16
+#define BATCH_SIZE 1
 
 
 class mlp{
@@ -44,7 +44,8 @@ class mlp{
         double sigmoid_activation(double x);
         double relu_activation(double x);
         
-        void forward_pass(network_params* params, std::vector<Data*> train);
+        void forward_pass(network_params* params, std::vector<Data*> batch);
+        void backward_pass(network_params* params, std::vector<Data*> batch);
         
         void create_one_hot(network_params* params, std::vector<Data*> train, int num_classes);
         std::vector<Data*> create_batch(std::vector<Data*> data);
@@ -105,7 +106,15 @@ mlp::network_params* mlp::init_network(network_params* params, std::vector<Data*
    return params;
 }
 
-
+/**
+ * Applies the sigmoid activation function to the input value.
+ *
+ * The sigmoid function maps any real-valued number to a value between 0 and 1.
+ * This is often used as an output layer activation function in neural networks.
+ *
+ * @param x The input value to be activated.
+ * @return The result of applying the sigmoid function to the input value.
+ */
 double mlp::sigmoid_activation(double x){
 
     x = 1 / (1 + exp(x * -1));
@@ -119,27 +128,35 @@ double mlp::relu_activation(double x){
 
 
 
-
-std::vector<double*> mlp::mat_mul(std::vector<double*> X, int X_start, int X_end, std::vector<double*> W, int W_start, int W_end, std::vector<double*> B, std::vector<double*> Z, int Z_start, int Z_end, int activation){
 /**
- * X = Input matrix 
- * Z = Output matrix
- * W = Weight matrix (Size = X * Z) 784 * 256
- * B = Bias matrix 
- * forward pass eqn is => Z = W * X + B
- * 
- * X = [X1,X2,X3,X4,X5]
- * Z = [A1,A2,A3,A4]
- * W = [W1,W2,W3,W4,W5...W20]
- * B = [B1, B2, B3, B4]
- * 
- * activation:
- *  0 = no activation
- *  1 = sigmoid
- *  2 = ReLU
- * 
+ * @brief Performs matrix multiplication and applies activation function.
  *
-*/
+ * This function performs the matrix multiplication between the input matrix `X` and
+ * the weight matrix `W`, and adds the bias matrix `B`. It then applies the specified
+ * activation function to the result and stores it in the output matrix `Z`.
+ * 
+ * Forward pass eqn is => Z = W * X + B.
+ * 
+ * @param X A vector of pointers to double values representing the input matrix.
+ * @param X_start The starting index of the input matrix `X` in the vector.
+ * @param X_end The ending index (exclusive) of the input matrix `X` in the vector.
+ * @param W A vector of pointers to double values representing the weight matrix. (Size = X * Z) 784 * 256.
+ * @param W_start The starting index of the weight matrix `W` in the vector.
+ * @param W_end The ending index (exclusive) of the weight matrix `W` in the vector.
+ * @param B A vector of pointers to double values representing the bias matrix.
+ * @param Z A vector of pointers to double values representing the output matrix.
+ * @param Z_start The starting index of the output matrix `Z` in the vector.
+ * @param Z_end The ending index (exclusive) of the output matrix `Z` in the vector.
+ * @param activation An integer specifying the activation function to apply:
+ *                   0 = no activation, 1 = sigmoid, 2 = ReLU.
+ *
+ * @return A vector of pointers to double values representing the output matrix `Z`.
+ *
+ * @note The function assumes that the input matrices `X` and `W` have compatible
+ *       dimensions for matrix multiplication, and that the output matrix `Z` has
+ *       the correct size to store the result.
+ */
+std::vector<double*> mlp::mat_mul(std::vector<double*> X, int X_start, int X_end, std::vector<double*> W, int W_start, int W_end, std::vector<double*> B, std::vector<double*> Z, int Z_start, int Z_end, int activation){
 
 
     for (int i = 0; i<Z_end-Z_start; i++){
@@ -184,6 +201,23 @@ std::vector<double*> convertVector(const std::vector<uint8_t>* input) {
     return output;
 }
 
+
+/**
+ * @brief Creates a batch of data by randomly selecting examples from the input data.
+ *
+ * This function creates a batch of data by randomly shuffling the input data vector
+ * and selecting the first `BATCH_SIZE` elements from the shuffled vector. The batch
+ * is used for training or evaluation of the neural network.
+ *
+ * @param data A vector of pointers to Data objects representing the input data.
+ *
+ * @return A vector of pointers to Data objects representing the created batch.
+ *
+ * @note The function assumes that the input data vector has at least `BATCH_SIZE`
+ *       elements. If the input data vector has fewer elements than `BATCH_SIZE`,
+ *       the function will return a batch containing all available elements.
+ *       The constant `BATCH_SIZE` should be defined elsewhere in the code.
+ */
 std::vector<Data*> mlp::create_batch(std::vector<Data*> data){
     std::vector<Data*> batch;
     batch.reserve(BATCH_SIZE);
@@ -205,11 +239,19 @@ std::vector<Data*> mlp::create_batch(std::vector<Data*> data){
 
 
 /**
- * @brief Forward pass takes input image vector and calculates the values for the activations for different layers.
- * First we calculate the weights and activations for the first hidden layer, then we use those activations for second hidden layer, 
- * and then the third activation for output layer
-*/
-void mlp::forward_pass(network_params* params, std::vector<Data*> train){
+ * @brief Performs the forward pass of the mlp.
+ *
+ * This function takes the input batch of data and propagates it through the MLP
+ * by performing matrix multiplications and applying activation functions at each layer.
+ * The computed activations are stored in the network_params object.
+ *
+ * @param params A pointer to the network_params object containing the weights, biases,
+ *               and activations for the network.
+ * 
+ * @param batch A vector of pointers to Data objects, representing the input batch.
+ *
+ */
+void mlp::forward_pass(network_params* params, std::vector<Data*> batch){
 
 
     //Between input layer and first hidden layer
@@ -217,16 +259,16 @@ void mlp::forward_pass(network_params* params, std::vector<Data*> train){
     // Z = first hidden, X = input, W = weights
     LOG_F(0, "Initializing forward pass.");
 
-    for(int i = 0; i<train.size(); i++){
+    for(int i = 0; i<batch.size(); i++){
         // initially we put in the input vector of size 784 into the first hidden layer of size 256.
         int X_start = 0;
         int X_end = INPUT_DIM;
         int Z_start = 0;
         int Z_end = HIDDEN_LAYER_SIZE;
         int W_start = 0;
-        int W_end = INPUT_DIM * HIDDEN_LAYER_SIZE;
+        int W_end = INPUT_DIM * HIDDEN_LAYER_SIZE ;
         // LOG_F(0, "%d, %d, %d, %d, %d, %d", X_start, X_end, Z_start, Z_end, W_start, W_end);
-        mat_mul(convertVector(train[i]->get_features()), 0, INPUT_DIM, params->weights, X_start, X_end, params->biases, params->activations, Z_start, Z_end, 2);
+        mat_mul(convertVector(batch[i]->get_features()), 0, INPUT_DIM, params->weights, X_start, X_end, params->biases, params->activations, Z_start, Z_end, 2);
         // LOG_F(0, "Input layer for image number : %d", i);
 
         
@@ -254,10 +296,8 @@ void mlp::forward_pass(network_params* params, std::vector<Data*> train){
             mat_mul(params->activations, X_start, X_end, params->weights, W_start, W_end, params->biases, params->activations, Z_start, Z_end, 1);
             params->pred.insert(params->pred.end(), params->activations.end()-10, params->activations.end());
         
-            LOG_F(0, "Forward pass for image : %d", i);
+            // LOG_F(0, "Forward pass for image : %d", i);
     }
-
-    LOG_F(0, "Forward pass completed.");
 }
 
 
@@ -307,12 +347,30 @@ void mlp::create_one_hot(network_params* params, std::vector<Data*> train, int n
     }
 }
 
+/**
+ * @brief Calculates the cross-entropy loss for multi-class classification.
+ *
+ * The cross-entropy loss is a commonly used loss function for multi-class
+ * classification tasks. It measures the performance of a model by comparing
+ * the predicted probability distribution over classes with the true distribution.
+ *
+ * @param y_true A vector representing the one-hot encoded true class labels.
+ *               The vector should contain 0s and a single 1, where the index
+ *               of the 1 corresponds to the true class label.
+ * @param y_pred A vector representing the predicted probability distribution
+ *               over classes. The sum of the elements in this vector should be 1.
+ *
+ * @return The cross-entropy loss as a scalar value.
+ *
+ * @note The input vectors y_true and y_pred should have the same size (number of classes).
+ *       The y_pred vector should contain valid probability values (non-negative and summing to 1).
+ */
 double cross_entropy_loss(std::vector<double*> pred, std::vector<double*> true_pred){
     double loss = 0.0;
 
     for(int i = 0; i < true_pred.size(); i++){
-        
-        
+        double pred_clipped = std::max(*pred[i], 1e-15);
+        loss += -1 * (pred_clipped * log(*true_pred[i]));  
     }
 
     return loss;
@@ -330,17 +388,25 @@ int main(){
     dh->load_feature_vectors("/home/snow/learn/dl_cpp/cpp_mlp/dataset/train-images-idx3-ubyte");
     dh->load_feature_labels("/home/snow/learn/dl_cpp/cpp_mlp/dataset/train-labels-idx1-ubyte");
     dh->split_data();
+
     int num_classes = dh->class_counter();
 
     mlp *nn = new mlp();
     nn->init_network(nn->params, dh->get_train());
-
-    std::vector<Data*> batch = nn->create_batch(dh->get_train());
     
-    nn->create_one_hot(nn->params, batch, num_classes);
-    nn->forward_pass(nn->params, batch);
     LOG_F(0, "Train size = %ld", dh->get_train().size());
-    LOG_F(0, "Pred size = %ld", nn->params->pred.size());
-    LOG_F(0, "True Pred size = %ld", nn->params->true_pred.size());
+    int num_batches = dh->get_train().size()/BATCH_SIZE;
+
+    for(int batch_num = 0; batch_num < num_batches; batch_num++){
+        std::vector<Data*> batch = nn->create_batch(dh->get_train());
+
+        nn->create_one_hot(nn->params, batch, num_classes);
+        nn->forward_pass(nn->params, batch);
+
+        LOG_F(0, "Forward pass completed for batch %d.", batch_num);
+        // LOG_F(0, "Pred size = %ld", nn->params->pred.size());
+        // LOG_F(0, "True Pred size = %ld", nn->params->true_pred.size());
+    }
+
 
 }
