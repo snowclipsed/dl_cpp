@@ -24,7 +24,10 @@ class mlp{
 
     typedef struct{
         std::vector<double*> weights;
+        std::vector<double*> weight_gradients; // weight gradients
+        std::vector<double*> bias_gradients;
         std::vector<double*> biases;
+        std::vector<double*> logits;
         std::vector<double*> activations;
         std::vector<double*> pred;
         std::vector<double*> true_pred;
@@ -43,13 +46,16 @@ class mlp{
         double* random_double();
         double sigmoid_activation(double x);
         double relu_activation(double x);
+        double sigmoid_der(double x);
+        double relu_der(double x);
         
         void forward_pass(network_params* params, std::vector<Data*> batch);
         void backward_pass(network_params* params, std::vector<Data*> batch);
         
         void create_one_hot(network_params* params, std::vector<Data*> train, int num_classes);
         std::vector<Data*> create_batch(std::vector<Data*> data);
-        std::vector<double*> mat_mul(std::vector<double*> X, int X_start, int X_end, std::vector<double*> W, int W_start, int W_end, std::vector<double*> B, std::vector<double*> Z, int Z_start, int Z_end, int activation);
+        std::vector<double*> mat_mul(std::vector<double*> X, int X_start, int X_end, std::vector<double*> W, int W_start, int W_end, std::vector<double*> B, std::vector<double*> Z, int Z_start, int Z_end, std::vector<double*> A, int activation);
+        std::vector<double*> backwards_mat_mul(std::vector<double*> mat_A, std::vector<double*> mat_B, std::vector<double*> gradients);
 };
 
 mlp::mlp(){
@@ -78,21 +84,27 @@ mlp::network_params* mlp::init_network(network_params* params, std::vector<Data*
     params->num_biases = HIDDEN_LAYER_SIZE*NUM_HIDDEN_LAYERS + OUTPUT_DIM;
     params->weights.resize(params->num_weights);
     params->biases.resize(params->num_biases);
+    params->logits.resize(params->num_activations);
     params->activations.resize(params->num_activations);
+    params->weight_gradients.resize(params->num_weights);
+    params->bias_gradients.resize(params->num_activations);
     LOG_F(0, "Length of activations vector %ld", params->activations.size());
     int count = 0;
 
     for(int i = 0; i < params->num_weights ; i++){
         params->weights[i] = random_double();
+        params->weight_gradients[i] = random_double();
         count++;
     }
     LOG_F(0, "Successfully initialized all weights with random values.");
 
     for(int i = 0; i < params -> num_activations; i++){
         params->biases[i] = random_double();
+        params->bias_gradients[i] = random_double();
         double* zero = new double; 
         *zero = 0.000;
-        params->activations[i]= zero;   
+        params->activations[i]= zero;  
+        params->logits[i] = zero; 
     }
     LOG_F(0, "Successfully initialized all biases with random values.");
     LOG_F(0, "Successfully initialized all activations to zero.");
@@ -156,7 +168,7 @@ double mlp::relu_activation(double x){
  *       dimensions for matrix multiplication, and that the output matrix `Z` has
  *       the correct size to store the result.
  */
-std::vector<double*> mlp::mat_mul(std::vector<double*> X, int X_start, int X_end, std::vector<double*> W, int W_start, int W_end, std::vector<double*> B, std::vector<double*> Z, int Z_start, int Z_end, int activation){
+std::vector<double*> mlp::mat_mul(std::vector<double*> X, int X_start, int X_end, std::vector<double*> W, int W_start, int W_end, std::vector<double*> B, std::vector<double*> Z, int Z_start, int Z_end, std::vector<double*> A, int activation){
 
 
     for (int i = 0; i<Z_end-Z_start; i++){
@@ -165,6 +177,7 @@ std::vector<double*> mlp::mat_mul(std::vector<double*> X, int X_start, int X_end
             sum += *X[X_start+j] * *W[W_start+(X_end-X_start)*i+j];
             // offset of 784 * 256
         }
+        *A[Z_start+i] = sum + *B[Z_start+i];
         switch(activation){
 
         case 1:
@@ -257,7 +270,7 @@ void mlp::forward_pass(network_params* params, std::vector<Data*> batch){
     //Between input layer and first hidden layer
 
     // Z = first hidden, X = input, W = weights
-    LOG_F(0, "Initializing forward pass.");
+    // LOG_F(0, "Initializing forward pass.");
 
     for(int i = 0; i<batch.size(); i++){
         // initially we put in the input vector of size 784 into the first hidden layer of size 256.
@@ -268,7 +281,7 @@ void mlp::forward_pass(network_params* params, std::vector<Data*> batch){
         int W_start = 0;
         int W_end = INPUT_DIM * HIDDEN_LAYER_SIZE ;
         // LOG_F(0, "%d, %d, %d, %d, %d, %d", X_start, X_end, Z_start, Z_end, W_start, W_end);
-        mat_mul(convertVector(batch[i]->get_features()), 0, INPUT_DIM, params->weights, X_start, X_end, params->biases, params->activations, Z_start, Z_end, 2);
+        mat_mul(convertVector(batch[i]->get_features()), 0, INPUT_DIM, params->weights, X_start, X_end, params->biases, params->activations, Z_start, Z_end, params->logits, 2);
         // LOG_F(0, "Input layer for image number : %d", i);
 
         
@@ -282,7 +295,7 @@ void mlp::forward_pass(network_params* params, std::vector<Data*> batch){
            W_end += HIDDEN_LAYER_SIZE * HIDDEN_LAYER_SIZE; 
 
             // LOG_F(0, "%d, %d, %d, %d, %d, %d", X_start, X_end, Z_start, Z_end, W_start, W_end);
-            mat_mul(params->activations, X_start, X_end, params->weights, W_start, W_end, params->biases, params->activations, Z_start, Z_end, 2);
+            mat_mul(params->activations, X_start, X_end, params->weights, W_start, W_end, params->biases, params->activations, Z_start, Z_end, params->logits , 2);
             // LOG_F(0, "Hidden layer %d for image number : %d", layer+1, i);
         }
 
@@ -293,7 +306,7 @@ void mlp::forward_pass(network_params* params, std::vector<Data*> batch){
             W_start = INPUT_DIM * HIDDEN_LAYER_SIZE + HIDDEN_LAYER_SIZE*HIDDEN_LAYER_SIZE*(NUM_HIDDEN_LAYERS-1);
             W_end = INPUT_DIM * HIDDEN_LAYER_SIZE + HIDDEN_LAYER_SIZE*HIDDEN_LAYER_SIZE*(NUM_HIDDEN_LAYERS-1) + HIDDEN_LAYER_SIZE*OUTPUT_DIM;
             // LOG_F(0, "%d, %d, %d, %d, %d, %d", X_start, X_end, Z_start, Z_end, W_start, W_end);
-            mat_mul(params->activations, X_start, X_end, params->weights, W_start, W_end, params->biases, params->activations, Z_start, Z_end, 1);
+            mat_mul(params->activations, X_start, X_end, params->weights, W_start, W_end, params->biases, params->activations, Z_start, Z_end, params->logits, 1);
             params->pred.insert(params->pred.end(), params->activations.end()-10, params->activations.end());
         
             // LOG_F(0, "Forward pass for image : %d", i);
@@ -372,14 +385,116 @@ double cross_entropy_loss(std::vector<double*> pred, std::vector<double*> true_p
         double pred_clipped = std::max(*pred[i], 1e-15);
         loss += -1 * (pred_clipped * log(*true_pred[i]));  
     }
-
     return loss;
 }
 
+std::vector<double*> error_term(std::vector<double*> pred, std::vector<double*> true_pred){
+    
+    std::vector<double*> error;
 
-void backward_pass(){
+    for(int i = 0; i < true_pred.size(); i++){
+        double pred_clipped = std::max(*pred[i], 1e-15);
+        *error[i] = pred_clipped-*true_pred[i];
+    }
+    return error;
+}
+
+double mlp::sigmoid_der(double x){
+    return x * (1.0 - x);
+}
+
+
+double mlp::relu_der(double x) {
+    return x > 0 ? 1 : 0;
+}
+
+// std::vector<double*> mlp::backwards_mat_mul(std::vector<double*> mat_A, std::vector<double*> mat_D, std::vector<double> ){
+
+
+// // mat A is the activation of the current layer, mat D is the delta of the next layer
+// // gradients = 
+
+
+
+
+// return gradients;
+// }
+
+void mlp::backward_pass(network_params* params, std::vector<Data*> batch){
+
+    
+    /**
+     * First we will calculate the error term
+     * 
+     * δ=y_pred​−y_true
+     * 
+    */
+    
+    std::vector<double> output_error_term;
+    output_error_term.resize(OUTPUT_DIM);
+    int y_size = params->true_pred.size();
+    for(int i = 0 ; i < OUTPUT_DIM; i++){
+        // LOG_F(0, "pred = %f", *params->pred[y_size - OUTPUT_DIM + i]);
+        // LOG_F(0, "true_pred = %f", *params->true_pred[y_size - OUTPUT_DIM + i]);
+        output_error_term[i] = *params->pred[y_size - OUTPUT_DIM + i] -*params->true_pred[y_size - OUTPUT_DIM + i];
+    }
+
+// next we will find the gradient for weights between last hidden layer and the output layer
+// o x 1 * 1 x l = o * l 
+
+
+    std::vector<double> hidden_error_term;
+    hidden_error_term.resize(HIDDEN_LAYER_SIZE*NUM_HIDDEN_LAYERS);
+
+
+//h3 = h3xo * ox1 * h3
+    // h3 = h3 * h3
+    for(int i = 0; i<HIDDEN_LAYER_SIZE; i++){
+        for(int j = 0; j<OUTPUT_DIM; j++){
+                hidden_error_term[HIDDEN_LAYER_SIZE*(NUM_HIDDEN_LAYERS-1)+i] += *params->weights[params->num_weights - OUTPUT_DIM*HIDDEN_LAYER_SIZE +  j*HIDDEN_LAYER_SIZE + i] * output_error_term[j];
+                hidden_error_term[HIDDEN_LAYER_SIZE*(NUM_HIDDEN_LAYERS-1)+i] = hidden_error_term[HIDDEN_LAYER_SIZE*(NUM_HIDDEN_LAYERS-1)+i] * relu_der(*params->logits[params->num_activations - (OUTPUT_DIM + HIDDEN_LAYER_SIZE) + i]);
+            }
+        }
+
+
+
+
+    for(int hidden = NUM_HIDDEN_LAYERS-1; hidden <0; hidden--){
+        for(int i = 0; i<HIDDEN_LAYER_SIZE; i++){
+            for(int j = 0; j<HIDDEN_LAYER_SIZE; i++){
+                hidden_error_term[HIDDEN_LAYER_SIZE*(hidden-1)+i] += *params->weights[params->num_weights - OUTPUT_DIM*HIDDEN_LAYER_SIZE + j * HIDDEN_LAYER_SIZE + i] * hidden_error_term[HIDDEN_LAYER_SIZE*(hidden)+j];
+                hidden_error_term[HIDDEN_LAYER_SIZE*(hidden-1)+i] += hidden_error_term[HIDDEN_LAYER_SIZE*(hidden-1)+i] * relu_der(*params->logits[params->num_activations - (OUTPUT_DIM + HIDDEN_LAYER_SIZE*hidden) + i]);
+                }
+            }
+        }
+
+    
+    for(int i = 0; i<OUTPUT_DIM; i++){
+        for(int j = 0; j<HIDDEN_LAYER_SIZE; j++){
+            *params->weight_gradients[(params->num_weights -HIDDEN_LAYER_SIZE*OUTPUT_DIM) + HIDDEN_LAYER_SIZE*i + j] += output_error_term[i] * *params->activations[params->num_activations - (HIDDEN_LAYER_SIZE + OUTPUT_DIM) + j];
+            }
+        }
+    
+    for(int i = 0; i<HIDDEN_LAYER_SIZE; i++){
+        for(int j = 0; j<HIDDEN_LAYER_SIZE; j++){   
+            *params->weight_gradients[params->num_weights - (HIDDEN_LAYER_SIZE*OUTPUT_DIM + HIDDEN_LAYER_SIZE*HIDDEN_LAYER_SIZE) + HIDDEN_LAYER_SIZE*i +j] += hidden_error_term[HIDDEN_LAYER_SIZE*(NUM_HIDDEN_LAYERS-1) + i] * *params->activations[params->num_activations - (HIDDEN_LAYER_SIZE*(NUM_HIDDEN_LAYERS-1) + OUTPUT_DIM) +j];
+        }
+    }
+
+//next we will find the gradient for weights between the hidden layers
+// grad of 2 = grad of 3 and activation of 2 
+// grad of 1 = grad of 2 and activation of 1
+// grad of layer - 1 = grad of layer and activation of layer - 1
+// for(int layer = NUM_HIDDEN_LAYERS; layer > 0; layer --){
+
+//     *params->weight_gradients[] = *params->weight_gradients[] * *params->activations[]; // 
+
+
+// }
+
 
 }
+
 
 
 int main(){
@@ -404,8 +519,13 @@ int main(){
         nn->forward_pass(nn->params, batch);
 
         LOG_F(0, "Forward pass completed for batch %d.", batch_num);
+        
         // LOG_F(0, "Pred size = %ld", nn->params->pred.size());
         // LOG_F(0, "True Pred size = %ld", nn->params->true_pred.size());
+        nn->backward_pass(nn->params, batch);
+        
+        LOG_F(0, "Backward pass completed for batch %d.", batch_num);
+  
     }
 
 
