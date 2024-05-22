@@ -30,6 +30,7 @@ class mlp{
         std::vector<double*> biases;
         std::vector<double*> logits;
         std::vector<double*> activations;
+        std::vector<double*> error_term;
         std::vector<double*> pred;
         std::vector<double*> true_pred;
         int num_activations;
@@ -43,6 +44,13 @@ class mlp{
         
         network_params* params;
         network_params* init_network(network_params* params, std::vector<Data*> train);
+
+
+        const int input_weights_size = INPUT_DIM * HIDDEN_LAYER_SIZE;
+        const int hidden_weights_size = HIDDEN_LAYER_SIZE * HIDDEN_LAYER_SIZE;
+        const int output_weights_size = HIDDEN_LAYER_SIZE * OUTPUT_DIM;
+
+
         
         double* random_double();
         double sigmoid_activation(double x);
@@ -87,6 +95,7 @@ mlp::network_params* mlp::init_network(network_params* params, std::vector<Data*
     params->biases.resize(params->num_biases);
     params->logits.resize(params->num_activations);
     params->activations.resize(params->num_activations);
+    params->error_term.resize(params->num_activations);
     params->weight_gradients.resize(params->num_weights);
     params->bias_gradients.resize(params->num_activations);
     LOG_F(0, "Length of activations vector %ld", params->activations.size());
@@ -106,6 +115,7 @@ mlp::network_params* mlp::init_network(network_params* params, std::vector<Data*
         *zero = 0.000;
         params->activations[i]= zero;  
         params->logits[i] = zero; 
+        params->error_term[i] = zero;
     }
     LOG_F(0, "Successfully initialized all biases with random values.");
     LOG_F(0, "Successfully initialized all activations to zero.");
@@ -302,7 +312,7 @@ void mlp::forward_pass(network_params* params, std::vector<Data*> batch){
         int W_end = INPUT_DIM * HIDDEN_LAYER_SIZE ;
         
         convertVector(batch[i]->get_features(), batch_input);
-        LOG_F(0, "%d, %d, %d, %d, %d, %d", X_start, X_end, Z_start, Z_end, W_start, W_end);
+        // LOG_F(0, "%d, %d, %d, %d, %d, %d", X_start, X_end, Z_start, Z_end, W_start, W_end);
         mat_mul(batch_input, 0, INPUT_DIM, params->weights, X_start, X_end, params->biases, params->activations, Z_start, Z_end, params->logits, 2);
         // LOG_F(0, "Input layer for image number : %d", i);
 
@@ -410,17 +420,6 @@ double cross_entropy_loss(std::vector<double*> pred, std::vector<double*> true_p
     return loss;
 }
 
-std::vector<double*> error_term(std::vector<double*> pred, std::vector<double*> true_pred){
-    
-    std::vector<double*> error;
-
-    for(int i = 0; i < true_pred.size(); i++){
-        double pred_clipped = std::max(*pred[i], 1e-15);
-        *error[i] = pred_clipped-*true_pred[i];
-    }
-    return error;
-}
-
 double mlp::sigmoid_der(double x){
     return x * (1.0 - x);
 }
@@ -430,7 +429,7 @@ double mlp::relu_der(double x) {
     return x > 0 ? 1 : 0;
 }
 
-// std::vector<double*> mlp::backwards_mat_mul(std::vector<double*> mat_A, std::vector<double*> mat_D, std::vector<double> ){
+
 
 
 // // mat A is the activation of the current layer, mat D is the delta of the next layer
@@ -442,118 +441,150 @@ double mlp::relu_der(double x) {
 // return gradients;
 // }
 
+
+// std::vector<double*> mlp::backwards_mat_mul(std::vector<double*> mat_A, std::vector<double*> mat_D, std::vector<double> ){}
+
 void mlp::backward_pass(network_params* params, std::vector<Data*> batch){
 
     
-    /**
-     * First we will calculate the error term
-     * 
-     * δ=y_pred​−y_true
-     * 
-    */
-
-    std::vector<double> output_error_term;
-    output_error_term.resize(OUTPUT_DIM);
-    int y_size = params->true_pred.size();
-
-    std::vector<double> hidden_error_term;
-    hidden_error_term.resize(HIDDEN_LAYER_SIZE*NUM_HIDDEN_LAYERS);
-
+    
     std::vector<double*> features;
     features.resize(INPUT_DIM);
 
-    for(int image_num = 0; image_num<batch.size(); image_num++){
-    std::fill(output_error_term.begin(), output_error_term.end(), 0.0);
-    std::fill(hidden_error_term.begin(), hidden_error_term.end(), 0.0);
+    int i = 0;
+    int j = 0;
+    int layer = 0;
+
+    int activation_offset = params->num_activations - OUTPUT_DIM;
+    int weight_offset;
+
+    int y_size = params->true_pred.size();
+
+    for(int image = 0; image<batch.size(); image++){
+        
+        convertVector(batch[image]->get_features(), features);
 
 
-        for(int i = 0 ; i < OUTPUT_DIM; i++){
-            // LOG_F(0, "pred = %f", *params->pred[y_size - OUTPUT_DIM + i]);
-            // LOG_F(0, "true_pred = %f", *params->true_pred[y_size - OUTPUT_DIM + i]);
-            output_error_term[i] = *params->pred[y_size - OUTPUT_DIM + i] -*params->true_pred[y_size - OUTPUT_DIM + i];
+        // calculate error term for output neurons
+        for(i = 0; i<OUTPUT_DIM; i++){
+            *params->error_term[activation_offset + i] = *params->pred[y_size - OUTPUT_DIM + i] - *params->true_pred[y_size - OUTPUT_DIM + i];
         }
 
-    // next we will find the gradient for weights between last hidden layer and the output layer
-    // o x 1 * 1 x l = o * l 
-
-
-
-
-
-    //h3 = h3xo * ox1 * h3
-        // h3 = h3 * h3
-        for(int i = 0; i<HIDDEN_LAYER_SIZE; i++){
-            for(int j = 0; j<OUTPUT_DIM; j++){
-                    hidden_error_term[HIDDEN_LAYER_SIZE*(NUM_HIDDEN_LAYERS-1)+i] += *params->weights[params->num_weights - OUTPUT_DIM*HIDDEN_LAYER_SIZE +  j*HIDDEN_LAYER_SIZE + i] * output_error_term[j];
-                    hidden_error_term[HIDDEN_LAYER_SIZE*(NUM_HIDDEN_LAYERS-1)+i] = hidden_error_term[HIDDEN_LAYER_SIZE*(NUM_HIDDEN_LAYERS-1)+i] * relu_der(*params->activations[params->num_activations - (OUTPUT_DIM + HIDDEN_LAYER_SIZE) + i]);
-                }
+        //calculate the error term for last hidden layer
+        int previous_error_offset = activation_offset;
+        activation_offset = params->num_activations-(OUTPUT_DIM+HIDDEN_LAYER_SIZE);
+        weight_offset = params->num_weights-(output_weights_size);
+        for(i = 0; i<HIDDEN_LAYER_SIZE; i++){
+            for(j = 0; j<OUTPUT_DIM; j++){
+                *params->error_term[activation_offset + i] +=  *params->weights[weight_offset + HIDDEN_LAYER_SIZE*j + i] * *params->error_term[previous_error_offset + j];
+                *params->error_term[activation_offset + i] = *params->error_term[activation_offset + i] * relu_der(*params->activations[activation_offset + i]);
             }
+        }
 
+        //calculate the error term for the other hidden layers
+        for(layer = 0; layer < NUM_HIDDEN_LAYERS-1; layer++){
+            previous_error_offset = activation_offset;
+            activation_offset -= HIDDEN_LAYER_SIZE;
+            weight_offset -= hidden_weights_size;
 
-
-
-        for(int hidden = NUM_HIDDEN_LAYERS-1; hidden <0; hidden--){
-            for(int i = 0; i<HIDDEN_LAYER_SIZE; i++){
-                for(int j = 0; j<HIDDEN_LAYER_SIZE; i++){
-                    hidden_error_term[HIDDEN_LAYER_SIZE*(hidden-1)+i] += *params->weights[params->num_weights - OUTPUT_DIM*HIDDEN_LAYER_SIZE + j * HIDDEN_LAYER_SIZE + i] * hidden_error_term[HIDDEN_LAYER_SIZE*(hidden)+j];
-                    hidden_error_term[HIDDEN_LAYER_SIZE*(hidden-1)+i] += hidden_error_term[HIDDEN_LAYER_SIZE*(hidden-1)+i] * relu_der(*params->activations[params->num_activations - (OUTPUT_DIM + HIDDEN_LAYER_SIZE*hidden) + i]);
-                    }
-                }
-            }
-        
-
-        
-        for(int i = 0; i<OUTPUT_DIM; i++){
-            for(int j = 0; j<HIDDEN_LAYER_SIZE; j++){
-                *params->weight_gradients[(params->num_weights -HIDDEN_LAYER_SIZE*OUTPUT_DIM) + HIDDEN_LAYER_SIZE*i + j] += output_error_term[i] * *params->logits[params->num_activations - (HIDDEN_LAYER_SIZE + OUTPUT_DIM) + j];
-                }
-            }
-        
-
-        for(int layer = NUM_HIDDEN_LAYERS-1; layer > 0; layer--){
-            for(int i = 0; i<HIDDEN_LAYER_SIZE; i++){
-                for(int j = 0; j<HIDDEN_LAYER_SIZE; j++){
-                    *params->weight_gradients[params->num_weights - (HIDDEN_LAYER_SIZE*OUTPUT_DIM + (NUM_HIDDEN_LAYERS - layer)* HIDDEN_LAYER_SIZE *HIDDEN_LAYER_SIZE) + HIDDEN_LAYER_SIZE*i +j] += hidden_error_term[HIDDEN_LAYER_SIZE*(layer) + i] * *params->logits[params->num_activations - (HIDDEN_LAYER_SIZE*(NUM_HIDDEN_LAYERS-1) + OUTPUT_DIM) +j];
+            // LOG_F(0, "previous layer offset : %d, activation offset: %d, weight offset : %d", previous_error_offset, activation_offset, weight_offset);
+            
+            for(i = 0; i<HIDDEN_LAYER_SIZE; i++){
+                for(j = 0; j<HIDDEN_LAYER_SIZE; j++){
+                    *params->error_term[activation_offset + i] +=  *params->weights[weight_offset + HIDDEN_LAYER_SIZE*j + i] * *params->error_term[previous_error_offset + j];
+                    *params->error_term[activation_offset + i] = *params->error_term[activation_offset + i] * relu_der(*params->activations[activation_offset + i]);
                 }
             }
         }
 
-        for(int i = 0; i < HIDDEN_LAYER_SIZE; i++){
-            for(int j = 0; j < INPUT_DIM; j++){
-                convertVector(batch[image_num]->get_features(), features);
-                *params->weight_gradients[i * INPUT_DIM + j] += hidden_error_term[i] * *features[j];
+        /*
+        Calculating gradients.
+        */
+
+        // calculate weight gradient for output neurons
+        // del = grad * logits of previous layer 
+        activation_offset = params->num_activations - OUTPUT_DIM;
+        weight_offset = params->num_weights - output_weights_size;
+        int logit_offset = params->num_activations - (OUTPUT_DIM + HIDDEN_LAYER_SIZE);
+
+        for(i = 0; i<OUTPUT_DIM; i++){
+            for(j = 0; j< HIDDEN_LAYER_SIZE; j++){
+                *params->weight_gradients[weight_offset + i * HIDDEN_LAYER_SIZE + j] += *params->error_term[activation_offset + i] * *params->logits[logit_offset + j];
             }
         }
 
+        //bias gradient calculation
+        for(i = 0; i<OUTPUT_DIM; i++){
+            *params->bias_gradients[activation_offset + i] = *params->error_term[activation_offset + i];
+        }
+                
+        // calculate the gradients of the hidden weights
+        for(layer = 0; layer<NUM_HIDDEN_LAYERS-1; layer++){
+            activation_offset -= HIDDEN_LAYER_SIZE;
+            weight_offset -= hidden_weights_size;
+            logit_offset -= HIDDEN_LAYER_SIZE;
+            for(i = 0; i<HIDDEN_LAYER_SIZE; i++){
+                for(j=0; j<HIDDEN_LAYER_SIZE; j++){
+                    *params->weight_gradients[weight_offset + i * HIDDEN_LAYER_SIZE + j] += *params->error_term[activation_offset + i] * *params->logits[logit_offset + j];
+                }
+            }
+
+            for(i = 0; i<HIDDEN_LAYER_SIZE; i++){
+                *params->bias_gradients[activation_offset + i] = *params->error_term[activation_offset + i];
+            }
+        }
+        
+
+        for(i = 0; i<HIDDEN_LAYER_SIZE; i++){
+                for(j=0; j<INPUT_DIM; j++){
+                    *params->weight_gradients[weight_offset + i * HIDDEN_LAYER_SIZE + j] += *params->error_term[activation_offset + i] * *features[j];
+                }
+            }
+
+        for(i = 0; i<HIDDEN_LAYER_SIZE; i++){
+            *params->bias_gradients[activation_offset + i] = *params->error_term[activation_offset + i];
+        }
+    }   
+
+    weight_offset = params->num_weights - output_weights_size;
+    int index = 0;
+    for(i = 0; i<OUTPUT_DIM; i++){
+        for(j = 0; j<HIDDEN_LAYER_SIZE; j++){
+            index = i*HIDDEN_LAYER_SIZE + j;
+            *params->weights[weight_offset + index] -= LEARNING_RATE * *params->weight_gradients[weight_offset + index];
+        }
+    }
+
+    int bias_offset = params->num_biases - OUTPUT_DIM;
+    for(i = 0; i<OUTPUT_DIM; i++){
+        *params->bias_gradients[bias_offset + i] -= LEARNING_RATE * *params->bias_gradients[bias_offset + i];
+    }
+
+    for(layer = 0; layer<NUM_HIDDEN_LAYERS-1; layer++){
+        weight_offset -= hidden_weights_size;
+        bias_offset -= HIDDEN_LAYER_SIZE;
+        // LOG_F(0, "weight_offset: %d, bias_offset: %d", weight_offset, bias_offset);
+        for(i = 0; i<HIDDEN_LAYER_SIZE; i++){
+            for(j = 0; j<HIDDEN_LAYER_SIZE; j++){
+                index = i*HIDDEN_LAYER_SIZE + j;
+                *params->weights[weight_offset + index] -= LEARNING_RATE * *params->weight_gradients[weight_offset + index];
+            }
+        }
+
+        for(i = 0; i<HIDDEN_LAYER_SIZE; i++){
+            *params->bias_gradients[bias_offset + i] -= LEARNING_RATE * *params->bias_gradients[bias_offset + i];
+        }
+    }
+
+    weight_offset -= input_weights_size;
+    // LOG_F(0, "weight_offset: %d, bias_offset: %d", weight_offset, bias_offset);
+    for(i = 0; i<HIDDEN_LAYER_SIZE; i++){
+        for(j = 0; j<INPUT_DIM; j++){
+            index = i*INPUT_DIM + j;
+            *params->weights[weight_offset + index] -= LEARNING_RATE * *params->weight_gradients[weight_offset + index];
+        }
+    }
 }
-
-
-        for(int i = 0; i<OUTPUT_DIM; i++){
-            for(int j = 0; j<HIDDEN_LAYER_SIZE; j++){
-                *params->weights[(params->num_weights -HIDDEN_LAYER_SIZE*OUTPUT_DIM) + HIDDEN_LAYER_SIZE*i + j] = *params->weights[(params->num_weights -HIDDEN_LAYER_SIZE*OUTPUT_DIM) + HIDDEN_LAYER_SIZE*i + j] - LEARNING_RATE * *params->weight_gradients[(params->num_weights -HIDDEN_LAYER_SIZE*OUTPUT_DIM) + HIDDEN_LAYER_SIZE*i + j];
-                }
-            }
-        
-
-        for(int layer = NUM_HIDDEN_LAYERS-1; layer > 0; layer--){
-            for(int i = 0; i<HIDDEN_LAYER_SIZE; i++){
-                for(int j = 0; j<HIDDEN_LAYER_SIZE; j++){
-                    *params->weights[params->num_weights - (HIDDEN_LAYER_SIZE*OUTPUT_DIM + (NUM_HIDDEN_LAYERS - layer)* HIDDEN_LAYER_SIZE *HIDDEN_LAYER_SIZE) + HIDDEN_LAYER_SIZE*i +j] = *params->weights[params->num_weights - (HIDDEN_LAYER_SIZE*OUTPUT_DIM + (NUM_HIDDEN_LAYERS - layer)* HIDDEN_LAYER_SIZE *HIDDEN_LAYER_SIZE) + HIDDEN_LAYER_SIZE*i +j] - LEARNING_RATE * *params->weight_gradients[params->num_weights - (HIDDEN_LAYER_SIZE*OUTPUT_DIM + (NUM_HIDDEN_LAYERS - layer)* HIDDEN_LAYER_SIZE *HIDDEN_LAYER_SIZE) + HIDDEN_LAYER_SIZE*i +j];
-                }
-            }
-        }
-
-        for(int i = 0; i < HIDDEN_LAYER_SIZE; i++){
-            for(int j = 0; j < INPUT_DIM; j++){
-                *params->weights[i*INPUT_DIM + j] = *params->weights[i*INPUT_DIM + j] - LEARNING_RATE * *params->weight_gradients[i * INPUT_DIM + j];
-            }
-        }
-
-    double CE_loss = cross_entropy_loss(params->pred, params->true_pred);
-    LOG_F(0, "Loss : %f", CE_loss);
-
-}
-
 
 
 int main(){
@@ -576,14 +607,12 @@ int main(){
 
         nn->create_one_hot(nn->params, batch, num_classes);
         nn->forward_pass(nn->params, batch);
-
         LOG_F(0, "Forward pass completed for batch %d.", batch_num);
-        
-        // LOG_F(0, "Pred size = %ld", nn->params->pred.size());
-        // LOG_F(0, "True Pred size = %ld", nn->params->true_pred.size());
         nn->backward_pass(nn->params, batch);
         
         LOG_F(0, "Backward pass completed for batch %d.", batch_num);
+        double CE_loss = cross_entropy_loss(nn->params->pred, nn->params->true_pred);
+        LOG_F(0, "Loss : %f", CE_loss);
   
     }
 
