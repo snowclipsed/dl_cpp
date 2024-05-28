@@ -37,3 +37,5 @@ main
 cpp_mlp/CMakeUserPresets.json
 cpp_mlp/build/vcpkg.json
 cpp_mlp/build/Makefile
+cpp_mlp/src/imgui.ini
+cpp_mlp/src/mlp

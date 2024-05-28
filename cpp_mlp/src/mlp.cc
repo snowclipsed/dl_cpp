@@ -1,5 +1,3 @@
-// #include "data_handler.hpp"
-// #include "data.hpp"
 #include "data_handler.hpp"
 #include <cstdlib>
 #include <vector>
@@ -15,6 +13,8 @@
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
+#include "implot.h"
+#include "implot_internal.h"
 #include <stdio.h>
 #include <future>
 #define GL_SILENCE_DEPRECATION
@@ -43,7 +43,8 @@
 #define HIDDEN_LAYER_SIZE 256
 #define NUM_HIDDEN_LAYERS 3
 #define BATCH_SIZE 1
-#define LEARNING_RATE 1e-3
+#define LEARNING_RATE 1e-5
+#define NUM_EPOCHS 3
 
 
 class mlp{
@@ -327,7 +328,7 @@ void mlp::forward_pass(network_params* params, std::vector<Data*> batch){
     // Z = first hidden, X = input, W = weights
     // LOG_F(0, "Initializing forward pass.");
     std::vector<double*> batch_input;
-    for(int i = 0; i<batch.size(); i++){
+    for(unsigned long i = 0; i<batch.size(); i++){
         // initially we put in the input vector of size 784 into the first hidden layer of size 256.
         int X_start = 0;
         int X_end = INPUT_DIM;
@@ -401,7 +402,7 @@ void mlp::create_one_hot(network_params* params, std::vector<Data*> train, int n
     // LOG_F(0, "Creating one hot vector.");
     
 
-    for(int image = 0; image<train.size(); image++){
+    for(long unsigned image = 0; image<train.size(); image++){
         for(int classlabel = 0 ; classlabel < num_classes; classlabel++){
             if (train[image]->get_enumerated_class_label() == classlabel){
                 double labelvalue = 1.00;
@@ -435,14 +436,20 @@ void mlp::create_one_hot(network_params* params, std::vector<Data*> train, int n
  * @note The input vectors y_true and y_pred should have the same size (number of classes).
  *       The y_pred vector should contain valid probability values (non-negative and summing to 1).
  */
-double cross_entropy_loss(std::vector<double*> pred, std::vector<double*> true_pred){
+double cross_entropy_loss(std::vector<double*> pred, std::vector<double*> true_pred) {
     double loss = 0.0;
+    const int num_classes = 10; // Number of classes for MNIST (0-9)
 
-    for(int i = 0; i < true_pred.size(); i++){
-        double pred_clipped = std::max(*pred[i], 1e-15);
-        loss += -1 * (*true_pred[i] * log(pred_clipped));  
+    for (long unsigned i = 0; i < true_pred.size(); i++) {
+        double sum_log_probs = 0.0;
+        for (int j = 0; j < num_classes; j++) {
+            double pred_clipped = std::max(pred[i][j], 1e-15);
+            sum_log_probs += true_pred[i][j] * log2(pred_clipped);
+        }
+        loss += -sum_log_probs;
     }
-    return loss;
+
+    return loss / true_pred.size();
 }
 
 double mlp::sigmoid_der(double x){
@@ -485,7 +492,7 @@ void mlp::backward_pass(network_params* params, std::vector<Data*> batch){
 
     int y_size = params->true_pred.size();
 
-    for(int image = 0; image<batch.size(); image++){
+    for(long unsigned image = 0; image<batch.size(); image++){
         
         convertVector(batch[image]->get_features(), features);
 
@@ -628,137 +635,130 @@ double CE_loss = cross_entropy_loss(nn->params->pred, nn->params->true_pred);
 return CE_loss;
 }
 
+void train_network(data_handler* dh, mlp* nn, int num_classes, std::vector<double>& losses) {
+    int num_batches = dh->get_train().size() / BATCH_SIZE;
+    for(int epoch_num = 0; epoch_num < NUM_EPOCHS ; epoch_num++){
+        for (int batch_num = 0; batch_num < num_batches; batch_num++) {
+        double loss = run_mlp(dh, nn, num_classes);
+        losses.push_back(loss);
+        // Sleep to simulate training time
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }
+}
 
 
 
-int main(int, char**){
 
-        data_handler *dh = new data_handler();
-    dh->load_feature_vectors("/home/snow/learn/dl_cpp/cpp_mlp/dataset/train-images-idx3-ubyte");
-    dh->load_feature_labels("/home/snow/learn/dl_cpp/cpp_mlp/dataset/train-labels-idx1-ubyte");
-    dh->split_data();
-
-    int num_classes = dh->class_counter();
-
-    mlp *nn = new mlp();
-    nn->init_network(nn->params, dh->get_train());
-    LOG_F(0, "Train size = %ld", dh->get_train().size());
-    int num_batches = dh->get_train().size()/BATCH_SIZE;
-
-    std::future<double> loss;
-    double last_loss;
-
+int main(int, char**) {
     glfwSetErrorCallback(glfw_error_callback);
         if (!glfwInit())
             return 1;
-
-    // Decide GL+GLSL versions
-    // GL 3.0 + GLSL 130
-    const char* glsl_version = "#version 130";
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-    //glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
-    //glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // 3.0+ only
-
-
-        // Create window with graphics context
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Dear ImGui GLFW+OpenGL3 example", nullptr, nullptr);
-    if (window == nullptr)
-        return 1;
+    // Setup GLFW window
+    if (!glfwInit()) return -1;
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "Neural Network Loss Visualization", NULL, NULL);
+    if (!window) { glfwTerminate(); return -1; }
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1); // Enable vsync
+
+    // // Initialize OpenGL loader
+    // if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) { return -1; }
 
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
+    ImPlot::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-
-    // Setup Dear ImGui style
     ImGui::StyleColorsDark();
-    //ImGui::StyleColorsLight();
 
-    // Setup Platform/Renderer backends
+    // Setup Platform/Renderer bindings
     ImGui_ImplGlfw_InitForOpenGL(window, true);
-#ifdef __EMSCRIPTEN__
-    ImGui_ImplGlfw_InstallEmscriptenCanvasResizeCallback("#canvas");
-#endif
-    ImGui_ImplOpenGL3_Init(glsl_version);
+    ImGui_ImplOpenGL3_Init("#version 130");
 
-    // Our state
-    bool show_demo_window = true;
-    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+    // Load Neural Network data
+    data_handler* dh = new data_handler();
+    dh->load_feature_vectors("/home/snow/learn/dl_cpp/cpp_mlp/dataset/train-images-idx3-ubyte");
+    dh->load_feature_labels("/home/snow/learn/dl_cpp/cpp_mlp/dataset/train-labels-idx1-ubyte");
+    dh->split_data();
+    int num_classes = dh->class_counter();
 
-        // Main loop
-    #ifdef __EMSCRIPTEN__
-        // For an Emscripten build we are disabling file-system access, so let's not attempt to do a fopen() of the imgui.ini file.
-        // You may manually call LoadIniSettingsFromMemory() to load settings from your own storage.
-        io.IniFilename = nullptr;
-        EMSCRIPTEN_MAINLOOP_BEGIN
-    #else
-        while (!glfwWindowShouldClose(window))
-    #endif
-        {
-            // Poll and handle events (inputs, window resize, etc.)
-            // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui wants to use your inputs.
-            // - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main application, or clear/overwrite your copy of the mouse data.
-            // - When io.WantCaptureKeyboard is true, do not dispatch keyboard input data to your main application, or clear/overwrite your copy of the keyboard data.
-            // Generally you may always pass all inputs to dear imgui, and hide them from your application based on those two flags.
-            glfwPollEvents();
+    mlp* nn = new mlp();
+    nn->init_network(nn->params, dh->get_train());
 
-            // Start the Dear ImGui frame
-            ImGui_ImplOpenGL3_NewFrame();
-            ImGui_ImplGlfw_NewFrame();
-            ImGui::NewFrame();
+    std::vector<double> losses;
+    std::thread training_thread(train_network, dh, nn, num_classes, std::ref(losses));
 
-            // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
-            if (show_demo_window)
-                ImGui::ShowDemoWindow(&show_demo_window);
+    // Main loop
+    while (!glfwWindowShouldClose(window)) {
+        // Poll and handle events
+        glfwPollEvents();
 
-            // 2. Show a simple window that we create ourselves. We use a Begin/End pair to create a named window.
-            {
+        // Start the ImGui frame
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
 
-                ImGui::Begin("MLP");
+        // Plotting
+        ImGui::SetNextWindowSize(ImVec2(800,600), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Loss Plot");
+        int plot_size = losses.size();
+        float x_min = plot_size > 100 ? plot_size - 100 : 0; // Show last 100 points or all points if less
+        float x_max = plot_size > 0 ? plot_size : 100; // Set x_max to number of points or 100 if no points
 
-                if (ImGui::Button("Run MLP")){
-                        for(int batch_num = 0; batch_num < num_batches; batch_num++){
-                            loss = std::async(std::launch::async, run_mlp, dh, nn, num_classes);
-                            
-                            if(loss.valid()){
-                                if(loss.wait_for(std::chrono::milliseconds(1)) == std::future_status::ready){
-                                last_loss = loss.get();
-                                }
-                            }
-                        LOG_F(0,"Loss : %f",last_loss);
-                        }
-                }
-                ImGui::End();
+        // Calculate the y-axis range based on the data in losses
+
+        double y_min = 0.00;
+        double y_max = 1.00;
+
+        if(!losses.empty()){
+            y_min = *std::min_element(losses.begin(), losses.end());
+            y_max = *std::max_element(losses.begin(), losses.end());
+        }
+
+        if (ImPlot::BeginPlot("Loss Curve")) {
+            ImPlot::SetupAxes("Step","Loss");
+            ImPlot::SetupAxesLimits(x_min, x_max, y_min, y_max, ImGuiCond_Always); // Set x and y limits to automatically fit data
+            ImPlot::PlotLine("Loss", losses.data(), losses.size());
+
+            // If there are any losses, plot a marker at the last point
+            if (!losses.empty()) {
+                double last_loss = losses.back();
+                // Display the latest loss under the plot
+                ImGui::Text("Current Loss: %.6f", last_loss);
+            } else {
+                ImGui::Text("Current Loss: N/A");
             }
 
-            // Rendering
-            ImGui::Render();
-            int display_w, display_h;
-            glfwGetFramebufferSize(window, &display_w, &display_h);
-            glViewport(0, 0, display_w, display_h);
-            glClearColor(clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w);
-            glClear(GL_COLOR_BUFFER_BIT);
-            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
-            glfwSwapBuffers(window);
+            ImPlot::EndPlot();
         }
-    #ifdef __EMSCRIPTEN__
-        EMSCRIPTEN_MAINLOOP_END;
-    #endif
 
-        // Cleanup
-        ImGui_ImplOpenGL3_Shutdown();
-        ImGui_ImplGlfw_Shutdown();
-        ImGui::DestroyContext();
+        ImGui::End();
 
-        glfwDestroyWindow(window);
-        glfwTerminate();
+        // Rendering
+        ImGui::Render();
+        int display_w, display_h;
+        glfwGetFramebufferSize(window, &display_w, &display_h);
+        glViewport(0, 0, display_w, display_h);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f); // RGBA: Black
+        glClear(GL_COLOR_BUFFER_BIT);
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-        return 0;
+        glfwSwapBuffers(window);
+    }
 
+    // Wait for the training thread to finish
+    training_thread.join();
+
+    // Cleanup
+    ImPlot::DestroyContext();
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+    glfwDestroyWindow(window);
+    glfwTerminate();
+
+    delete dh;
+    delete nn;
+
+    return 0;
 }
