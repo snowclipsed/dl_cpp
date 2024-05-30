@@ -641,8 +641,6 @@ void train_network(data_handler* dh, mlp* nn, int num_classes, std::vector<doubl
         for (int batch_num = 0; batch_num < num_batches; batch_num++) {
         double loss = run_mlp(dh, nn, num_classes);
         losses.push_back(loss);
-        // Sleep to simulate training time
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     }
 }
