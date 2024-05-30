@@ -45,7 +45,7 @@ void data_handler::load_feature_vectors(std::string PATH){
          * Hence we will be able to read all the data from the file
         */
         int img_size = header[2] * header[3];
-        for(int i=0; i<header[1]; i++){
+        for(unsigned int i=0; i<header[1]; i++){
             Data* d = new Data(); // initialize a data object container
             uint8_t pixel[1]; // initialize a variable to read a single pixel
             for(int j=0; j<img_size; j++){ // iterate over pixel data after the header
@@ -89,7 +89,7 @@ void data_handler::load_feature_labels(std::string PATH){
             }
         }
         LOG_F(0, "Label File header obtained: %d | %d", header[0], header[1]);
-            for(int i=0; i<header[1]; i++){
+            for(unsigned int i=0; i<header[1]; i++){
                 uint8_t label[1];
                 if(fread(label, sizeof(label), 1, file)){
                         data->at(i)->set_classlabel(label[0]);
