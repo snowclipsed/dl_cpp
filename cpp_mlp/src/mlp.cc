@@ -45,6 +45,7 @@
 #define BATCH_SIZE 1
 #define LEARNING_RATE 1e-5
 #define NUM_EPOCHS 3
+#define EPSILON 1e-5
 
 
 class mlp{
@@ -55,6 +56,9 @@ class mlp{
         std::vector<double*> bias_gradients;
         std::vector<double*> biases;
         std::vector<double*> logits;
+        std::vector<double*> gamma; //batchnorm learnable
+        std::vector<double*> beta; //batchnorm learnable
+        std::vector<double*> normalized_activations;
         std::vector<double*> activations;
         std::vector<double*> error_term;
         std::vector<double*> pred;
@@ -88,8 +92,9 @@ class mlp{
         void backward_pass(network_params* params, std::vector<Data*> batch);
         
         void create_one_hot(network_params* params, std::vector<Data*> train, int num_classes);
+        std::vector<double*> batch_norm(std::vector<double*> logits, std::vector<double*> normalized_activations, int logit_start, int logit_end, double epsilon);
         std::vector<Data*> create_batch(std::vector<Data*> data);
-        std::vector<double*> mat_mul(std::vector<double*> X, int X_start, int X_end, std::vector<double*> W, int W_start, int W_end, std::vector<double*> B, std::vector<double*> Z, int Z_start, int Z_end, std::vector<double*> A, int activation);
+        std::vector<double*> mat_mul(std::vector<double*> X, int X_start, int X_end, std::vector<double*> W, int W_start, int W_end, std::vector<double*> B, std::vector<double*> Z, int Z_start, int Z_end, std::vector<double*> A, std::vector<double*> Anorm, std::vector<double*>gamma, std::vector<double*> beta, int activation, bool batchnnorm);
         std::vector<double*> backwards_mat_mul(std::vector<double*> mat_A, std::vector<double*> mat_B, std::vector<double*> gradients);
 };
 
@@ -120,6 +125,9 @@ mlp::network_params* mlp::init_network(network_params* params, std::vector<Data*
     params->weights.resize(params->num_weights);
     params->biases.resize(params->num_biases);
     params->logits.resize(params->num_activations);
+    params->gamma.resize(params->num_activations);
+    params->beta.resize(params->num_activations);
+    params->normalized_activations.resize(params->num_activations);
     params->activations.resize(params->num_activations);
     params->error_term.resize(params->num_activations);
     params->weight_gradients.resize(params->num_weights);
@@ -140,7 +148,10 @@ mlp::network_params* mlp::init_network(network_params* params, std::vector<Data*
         double* zero = new double; 
         *zero = 0.000;
         params->activations[i]= zero;  
-        params->logits[i] = zero; 
+        params->logits[i] = zero;
+        params->normalized_activations[i] = zero;
+        params->gamma[i] = random_double();
+        params->beta[i] = random_double();
         params->error_term[i] = zero;
     }
     LOG_F(0, "Successfully initialized all biases with random values.");
@@ -205,31 +216,36 @@ double mlp::relu_activation(double x){
  *       dimensions for matrix multiplication, and that the output matrix `Z` has
  *       the correct size to store the result.
  */
-std::vector<double*> mlp::mat_mul(std::vector<double*> X, int X_start, int X_end, std::vector<double*> W, int W_start, int W_end, std::vector<double*> B, std::vector<double*> Z, int Z_start, int Z_end, std::vector<double*> A, int activation){
+std::vector<double*> mlp::mat_mul(std::vector<double*> X, int X_start, int X_end, std::vector<double*> W, int W_start, int W_end, std::vector<double*> B, std::vector<double*> Z, int Z_start, int Z_end, std::vector<double*> A, std::vector<double*> Anorm, std::vector<double*>gamma, std::vector<double*> beta, int activation, bool batchnnorm){
 
 
     for (int i = 0; i<Z_end-Z_start; i++){
         double sum = 0.0;
         for(int j = 0; j<X_end-X_start; j++){
             sum += *X[X_start+j] * *W[W_start+(X_end-X_start)*i+j];
-            // offset of 784 * 256
         }
         *A[Z_start+i] = sum + *B[Z_start+i];
+    }
+
+    if(batchnnorm){
+        batch_norm(A, Anorm, Z_start, Z_end, EPSILON);
+    }
+
+
+    for (int i = 0; i<Z_end-Z_start; i++){
+
         switch(activation){
 
         case 1:
-            *Z[Z_start+i] = sigmoid_activation(sum + *B[Z_start+i]);
-            // LOG_F(0, "Z = %f", *Z[i]);
+            *Z[Z_start+i] = sigmoid_activation(*Anorm[Z_start+i]* *gamma[Z_start + i] + *beta[Z_start+i]);
             // LOG_F(0, "Using sigmoid activation.");
             break;
         case 2:
-            *Z[Z_start+i] = relu_activation(sum + *B[Z_start+i]);
-            // LOG_F(0, "Z = %f", *Z[i]);
+            *Z[Z_start+i] = relu_activation(*Anorm[Z_start+i]* *gamma[Z_start + i] + *beta[Z_start+i]);
             // LOG_F(0, "Using ReLU activation.");
             break;
         default:
-            *Z[Z_start+i] = sigmoid_activation(sum + *B[Z_start+i]);
-            // LOG_F(0, "Z = %f", *Z[i]);
+            *Z[Z_start+i] = sigmoid_activation(*Anorm[Z_start+i]* *gamma[Z_start + i] + *beta[Z_start+i]);
             // LOG_F(0, "Using sigmoid activation.");
             break;
         }
@@ -307,6 +323,31 @@ std::vector<Data*> mlp::create_batch(std::vector<Data*> data){
 }
 
 
+
+std::vector<double*> mlp::batch_norm(std::vector<double*> logits, std::vector<double*> normalized_activations, int logit_start, int logit_end, double epsilon) {
+    // Compute the mean of the activations
+    double sum = 0.0;
+    for (int i = 0; i<logit_end-logit_start; i++) {
+        sum += *logits[logit_start + i];
+    }
+    double mean = sum / logits.size();
+    
+    // Compute the variance of the activations
+    double variance = 0.0;
+    for (int i = 0; i < logit_end-logit_start; i++) {
+        double logit = *logits[logit_start + i];
+        variance += (logit - mean) * (logit - mean);
+    }
+    variance /= logits.size();
+
+    for (int i = 0; i < logit_end-logit_start; i++) {
+        *normalized_activations[logit_start + i] = (*logits[i] - mean) / std::sqrt(variance + epsilon);
+    }
+
+    return normalized_activations;
+}
+
+
 /**
  * @brief Performs the forward pass of the mlp.
  *
@@ -328,7 +369,7 @@ void mlp::forward_pass(network_params* params, std::vector<Data*> batch){
     // Z = first hidden, X = input, W = weights
     // LOG_F(0, "Initializing forward pass.");
     std::vector<double*> batch_input;
-    for(unsigned long i = 0; i<batch.size(); i++){
+    
         // initially we put in the input vector of size 784 into the first hidden layer of size 256.
         int X_start = 0;
         int X_end = INPUT_DIM;
@@ -336,15 +377,16 @@ void mlp::forward_pass(network_params* params, std::vector<Data*> batch){
         int Z_end = HIDDEN_LAYER_SIZE;
         int W_start = 0;
         int W_end = INPUT_DIM * HIDDEN_LAYER_SIZE ;
-        
+    for(unsigned long i = 0; i<batch.size(); i++){    
         convertVector(batch[i]->get_features(), batch_input);
         // LOG_F(0, "%d, %d, %d, %d, %d, %d", X_start, X_end, Z_start, Z_end, W_start, W_end);
-        mat_mul(batch_input, 0, INPUT_DIM, params->weights, X_start, X_end, params->biases, params->activations, Z_start, Z_end, params->logits, 2);
+        mat_mul(batch_input, 0, INPUT_DIM, params->weights, X_start, X_end, params->biases, params->activations, Z_start, Z_end, params->logits, params->normalized_activations, params->gamma, params->beta, 2, true);
         // LOG_F(0, "Input layer for image number : %d", i);
-
+    }
         
 
-        for (int layer = 0; layer<NUM_HIDDEN_LAYERS-1; layer++){
+    for (int layer = 0; layer<NUM_HIDDEN_LAYERS-1; layer++){
+        for(unsigned long i = 0; i<batch.size(); i++){
            X_start = Z_start;
            X_end = Z_end;
            Z_start = Z_end;
@@ -353,10 +395,10 @@ void mlp::forward_pass(network_params* params, std::vector<Data*> batch){
            W_end += HIDDEN_LAYER_SIZE * HIDDEN_LAYER_SIZE; 
 
             // LOG_F(0, "%d, %d, %d, %d, %d, %d", X_start, X_end, Z_start, Z_end, W_start, W_end);
-            mat_mul(params->activations, X_start, X_end, params->weights, W_start, W_end, params->biases, params->activations, Z_start, Z_end, params->logits , 2);
+            mat_mul(params->activations, X_start, X_end, params->weights, W_start, W_end, params->biases, params->activations, Z_start, Z_end, params->logits , params->normalized_activations, params->gamma, params->beta, 2, true);
             // LOG_F(0, "Hidden layer %d for image number : %d", layer+1, i);
         }
-
+    }
             X_start = HIDDEN_LAYER_SIZE * (NUM_HIDDEN_LAYERS-1);
             X_end = HIDDEN_LAYER_SIZE * NUM_HIDDEN_LAYERS;
             Z_start = HIDDEN_LAYER_SIZE * NUM_HIDDEN_LAYERS;
@@ -364,7 +406,9 @@ void mlp::forward_pass(network_params* params, std::vector<Data*> batch){
             W_start = INPUT_DIM * HIDDEN_LAYER_SIZE + HIDDEN_LAYER_SIZE*HIDDEN_LAYER_SIZE*(NUM_HIDDEN_LAYERS-1);
             W_end = INPUT_DIM * HIDDEN_LAYER_SIZE + HIDDEN_LAYER_SIZE*HIDDEN_LAYER_SIZE*(NUM_HIDDEN_LAYERS-1) + HIDDEN_LAYER_SIZE*OUTPUT_DIM;
             // LOG_F(0, "%d, %d, %d, %d, %d, %d", X_start, X_end, Z_start, Z_end, W_start, W_end);
-            mat_mul(params->activations, X_start, X_end, params->weights, W_start, W_end, params->biases, params->activations, Z_start, Z_end, params->logits, 1);
+
+        for(unsigned long i = 0; i<batch.size(); i++){
+            mat_mul(params->activations, X_start, X_end, params->weights, W_start, W_end, params->biases, params->activations, Z_start, Z_end, params->logits, params->normalized_activations, params->gamma, params->beta, 1, true);
             params->pred.insert(params->pred.end(), params->activations.end()-10, params->activations.end());
         
             // LOG_F(0, "Forward pass for image : %d", i);
@@ -697,7 +741,7 @@ int main(int, char**) {
         ImGui::NewFrame();
 
         // Plotting
-        ImGui::SetNextWindowSize(ImVec2(800,600), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(800,400), ImGuiCond_FirstUseEver);
         ImGui::Begin("Loss Plot");
         int plot_size = losses.size();
         float x_min = plot_size > 100 ? plot_size - 100 : 0; // Show last 100 points or all points if less
