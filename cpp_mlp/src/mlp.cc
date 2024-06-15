@@ -51,6 +51,7 @@
 class mlp{
 
     typedef struct{
+        std::vector<double*> features;
         std::vector<double*> weights;
         std::vector<double*> weight_gradients; // weight gradients
         std::vector<double*> bias_gradients;
@@ -96,7 +97,8 @@ class mlp{
         std::vector<double*> batch_norm(std::vector<double*> logits, std::vector<double*> norm_logits, int logit_start, int logit_end, double epsilon);
         std::vector<Data*> create_batch(std::vector<Data*> data);
         std::vector<double*> mat_mul(network_params* params, std::vector<double*> input, int X_start, int X_end, int W_start, int W_end, int Z_start, int Z_end, bool is_input, int activation, bool batchnnorm);
-        std::vector<double*> backwards_mat_mul(std::vector<double*> mat_A, std::vector<double*> mat_B, std::vector<double*> gradients);
+        std::vector<double*> mat_mul_error_term(network_params* params, int activation_offset, int weight_offset, int previous_error_offset, int dim1, int dim2);
+        std::vector<double*> mat_mul_error_term(network_params* params, int activation_offset, int weight_offset, int dim1);
 };
 
 mlp::mlp(){
@@ -120,14 +122,10 @@ mlp::network_params* mlp::init_network(network_params* params, std::vector<Data*
      * To write an init function first we need to allocate memory for the weights using malloc.
     */
 
-    params->num_weights = INPUT_DIM * HIDDEN_LAYER_SIZE + HIDDEN_LAYER_SIZE*HIDDEN_LAYER_SIZE*(NUM_HIDDEN_LAYERS-1) + HIDDEN_LAYER_SIZE*OUTPUT_DIM;
-    params->num_activations = HIDDEN_LAYER_SIZE*NUM_HIDDEN_LAYERS + OUTPUT_DIM;
-    params->num_biases = HIDDEN_LAYER_SIZE*NUM_HIDDEN_LAYERS + OUTPUT_DIM;
-    params->weights.resize(params->num_weights);
-    params->biases.resize(params->num_biases);
-    params->logits.resize(params->num_activations);
-    params->gamma.resize(params->num_activations);
-    params->beta.resize(params->num_activations);
+    for(int i = 0; i<train.size(); i++){
+        convertVector(train[i]->get_features(), params->features);
+    }
+
     params->norm_logits.resize(params->num_activations);
     params->scaled_logits.resize(params->num_activations);
     params->activations.resize(params->num_activations);
@@ -189,75 +187,6 @@ double mlp::sigmoid_activation(double x){
 double mlp::relu_activation(double x){
     return std::max(0.00, x);
 }
-
-
-
-/**
- * @brief Performs matrix multiplication and applies activation function.
- *
- * This function performs the matrix multiplication between the input matrix `X` and
- * the weight matrix `W`, and adds the bias matrix `B`. It then applies the specified
- * activation function to the result and stores it in the output matrix `Z`.
- * 
- * Forward pass eqn is => Z = W * X + B.
- * 
- * @param X A vector of pointers to double values representing the input matrix.
- * @param X_start The starting index of the input matrix `X` in the vector.
- * @param X_end The ending index (exclusive) of the input matrix `X` in the vector.
- * @param W A vector of pointers to double values representing the weight matrix. (Size = X * Z) 784 * 256.
- * @param W_start The starting index of the weight matrix `W` in the vector.
- * @param W_end The ending index (exclusive) of the weight matrix `W` in the vector.
- * @param B A vector of pointers to double values representing the bias matrix.
- * @param Z A vector of pointers to double values representing the output matrix.
- * @param Z_start The starting index of the output matrix `Z` in the vector.
- * @param Z_end The ending index (exclusive) of the output matrix `Z` in the vector.
- * @param activation An integer specifying the activation function to apply:
- *                   0 = no activation, 1 = sigmoid, 2 = ReLU.
- *
- * @return A vector of pointers to double values representing the output matrix `Z`.
- *
- * @note The function assumes that the input matrices `X` and `W` have compatible
- *       dimensions for matrix multiplication, and that the output matrix `Z` has
- *       the correct size to store the result.
- */
-// std::vector<double*> mlp::mat_mul(std::vector<double*> X, int X_start, int X_end, std::vector<double*> W, int W_start, int W_end, std::vector<double*> B, std::vector<double*> Z, int Z_start, int Z_end, std::vector<double*> A, std::vector<double*> Anorm, std::vector<double*>gamma, std::vector<double*> beta, int activation, bool batchnnorm){
-
-
-//     for (int i = 0; i<Z_end-Z_start; i++){
-//         double sum = 0.0;
-//         for(int j = 0; j<X_end-X_start; j++){
-//             sum += *X[X_start+j] * *W[W_start+(X_end-X_start)*i+j];
-//         }
-//         *A[Z_start+i] = sum + *B[Z_start+i];
-//     }
-
-//     if(batchnnorm){
-//         batch_norm(A, Anorm, Z_start, Z_end, EPSILON);
-//     }
-
-
-//     for (int i = 0; i<Z_end-Z_start; i++){
-
-
-
-//         switch(activation){
-
-//         case 1:
-//             *Z[Z_start+i] = sigmoid_activation(*Anorm[Z_start+i]* *gamma[Z_start + i] + *beta[Z_start+i]); //scaled activation
-//             // LOG_F(0, "Using sigmoid activation.");
-//             break;
-//         case 2:
-//             *Z[Z_start+i] = relu_activation(*Anorm[Z_start+i]* *gamma[Z_start + i] + *beta[Z_start+i]);
-//             // LOG_F(0, "Using ReLU activation.");
-//             break;
-//         default:
-//             *Z[Z_start+i] = sigmoid_activation(*Anorm[Z_start+i]* *gamma[Z_start + i] + *beta[Z_start+i]);
-//             // LOG_F(0, "Using sigmoid activation.");
-//             break;
-//         }
-//     }
-// return Z;
-// }
 
 
 std::vector<double*> mlp::mat_mul(network_params* params, std::vector<double*> input, int X_start, int X_end, int W_start, int W_end, int Z_start, int Z_end, bool is_input, int activation, bool batchnnorm){
@@ -324,6 +253,27 @@ return params->activations;
 //     }
 
 void convertVector(const std::vector<uint8_t>* inputVector, std::vector<double*>& outputVector) {
+    // Check if the input vector pointer is not null
+    if (inputVector) {
+        // Clear the output vector to avoid appending to existing elements
+        outputVector.clear();
+
+        // Reserve enough space in the output vector to improve performance
+        outputVector.reserve(inputVector->size());
+
+        // Iterate over the input vector and convert each uint8_t value to a double pointer
+        for (uint8_t value : *inputVector) {
+            double* newDouble = new double(static_cast<double>(value));
+            outputVector.push_back(newDouble);
+            delete newDouble;
+        }
+    } else {
+        // Handle the case where the input vector pointer is null
+        outputVector.clear();
+    }
+}
+
+void convertFeatures(const std::vector<uint8_t>* inputVector, std::vector<double*>& outputVector) {
     // Check if the input vector pointer is not null
     if (inputVector) {
         // Clear the output vector to avoid appending to existing elements
@@ -565,19 +515,32 @@ double mlp::relu_der(double x) {
 }
 
 
+std::vector<double*> mlp::mat_mul_error_term(network_params* params, int activation_offset, int weight_offset, int dim1){
+    
+    
+    int y_size = params->true_pred.size();
+        
+    for(int i = 0; i<OUTPUT_DIM; i++){
+        *params->error_term[activation_offset + i] = *params->pred[y_size - OUTPUT_DIM + i] - *params->true_pred[y_size - OUTPUT_DIM + i];
+    }      
+
+    return params->error_term;
+    }
+
+std::vector<double*> mlp::mat_mul_error_term(network_params* params, int activation_offset, int weight_offset, int previous_error_offset, int dim1, int dim2){
+    for(int i = 0; i<dim2; i++){
+        for(int j = 0; j<dim1; j++){
+            *params->error_term[activation_offset + i] +=  *params->weights[weight_offset + HIDDEN_LAYER_SIZE*j + i] * *params->error_term[previous_error_offset + j];
+            *params->error_term[activation_offset + i] = *params->error_term[activation_offset + i] * relu_der(*params->activations[activation_offset + i]);
+        }
+    }
+    return params->error_term;
+}
 
 
-// // mat A is the activation of the current layer, mat D is the delta of the next layer
-// // gradients = 
 
 
 
-
-// return gradients;
-// }
-
-
-// std::vector<double*> mlp::backwards_mat_mul(std::vector<double*> mat_A, std::vector<double*> mat_D, std::vector<double> ){}
 
 void mlp::backward_pass(network_params* params, std::vector<Data*> batch){
 
@@ -592,44 +555,30 @@ void mlp::backward_pass(network_params* params, std::vector<Data*> batch){
 
     int activation_offset = params->num_activations - OUTPUT_DIM;
     int weight_offset;
+    int previous_error_offset = 0;
 
-    int y_size = params->true_pred.size();
+    
 
     for(long unsigned image = 0; image<batch.size(); image++){
         
         convertVector(batch[image]->get_features(), features);
 
 
-        // calculate error term for output neurons
-        for(i = 0; i<OUTPUT_DIM; i++){
-            *params->error_term[activation_offset + i] = *params->pred[y_size - OUTPUT_DIM + i] - *params->true_pred[y_size - OUTPUT_DIM + i];
-        }
+        mat_mul_error_term(params, activation_offset, weight_offset, OUTPUT_DIM);
 
         //calculate the error term for last hidden layer
-        int previous_error_offset = activation_offset;
+        previous_error_offset = activation_offset;
         activation_offset = params->num_activations-(OUTPUT_DIM+HIDDEN_LAYER_SIZE);
         weight_offset = params->num_weights-(output_weights_size);
-        for(i = 0; i<HIDDEN_LAYER_SIZE; i++){
-            for(j = 0; j<OUTPUT_DIM; j++){
-                *params->error_term[activation_offset + i] +=  *params->weights[weight_offset + HIDDEN_LAYER_SIZE*j + i] * *params->error_term[previous_error_offset + j];
-                *params->error_term[activation_offset + i] = *params->error_term[activation_offset + i] * relu_der(*params->activations[activation_offset + i]);
-            }
-        }
+        mat_mul_error_term(params, activation_offset, weight_offset, previous_error_offset, OUTPUT_DIM, HIDDEN_LAYER_SIZE);
+
 
         //calculate the error term for the other hidden layers
         for(layer = 0; layer < NUM_HIDDEN_LAYERS-1; layer++){
             previous_error_offset = activation_offset;
             activation_offset -= HIDDEN_LAYER_SIZE;
             weight_offset -= hidden_weights_size;
-
-            // LOG_F(0, "previous layer offset : %d, activation offset: %d, weight offset : %d", previous_error_offset, activation_offset, weight_offset);
-            
-            for(i = 0; i<HIDDEN_LAYER_SIZE; i++){
-                for(j = 0; j<HIDDEN_LAYER_SIZE; j++){
-                    *params->error_term[activation_offset + i] +=  *params->weights[weight_offset + HIDDEN_LAYER_SIZE*j + i] * *params->error_term[previous_error_offset + j];
-                    *params->error_term[activation_offset + i] = *params->error_term[activation_offset + i] * relu_der(*params->activations[activation_offset + i]);
-                }
-            }
+            mat_mul_error_term(params, activation_offset, weight_offset, previous_error_offset, HIDDEN_LAYER_SIZE, HIDDEN_LAYER_SIZE);
         }
 
         /*
@@ -719,9 +668,6 @@ void mlp::backward_pass(network_params* params, std::vector<Data*> batch){
             *params->weights[weight_offset + index] -= LEARNING_RATE * *params->weight_gradients[weight_offset + index];
         }
     }
-
-    
-
 }
 
 static void glfw_error_callback(int error, const char* description)
