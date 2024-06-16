@@ -722,6 +722,7 @@ int main(int, char**) {
     data_handler* dh = new data_handler();
     dh->load_feature_vectors("/home/snow/learn/dl_cpp/cpp_mlp/dataset/train-images-idx3-ubyte");
     dh->load_feature_labels("/home/snow/learn/dl_cpp/cpp_mlp/dataset/train-labels-idx1-ubyte");
+    dh->convert_vector();
     dh->split_data();
     int num_classes = dh->class_counter();
 

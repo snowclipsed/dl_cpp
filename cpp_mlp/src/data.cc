@@ -6,10 +6,12 @@
 
 Data::Data(){
     features_RC = new std::vector <uint8_t>; // initialize the feature vector
+    features_RC_double = new std::vector <double>;
 }
 
 Data::~Data(){
     delete features_RC; // delete the feature vector
+    // delete features_RC_double;
 }
 
 void Data::set_features(std::vector <uint8_t> *vector){
@@ -48,3 +50,6 @@ std::vector<uint8_t> * Data::get_features(){
 
 }
 
+std::vector<double> * Data::get_features_double(){
+    return features_RC_double;
+}

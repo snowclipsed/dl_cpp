@@ -18,6 +18,7 @@ class Data {
     */
 
     std::vector <uint8_t> * features_RC; // It is a pointer to the feature vector. Size of vector = Row Size * Column Size.
+    std::vector <double> * features_RC_double;
     uint8_t class_label_L;
     int enum_label_E;
 
@@ -37,6 +38,7 @@ class Data {
 
     // getters
     std::vector<uint8_t> * get_features();
+    std::vector<double> * get_features_double();
 
 };
 

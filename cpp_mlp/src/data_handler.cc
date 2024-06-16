@@ -185,6 +185,25 @@ int data_handler::class_counter(){
     return count;
 }
 
+void data_handler::convert_vector() {
+    // Iterate over each element in the data vector
+    for (size_t j = 0; j < data->size(); j++) {
+        // Access the current feature vector and its size
+        auto& feature_vector = *data->at(j)->get_features();
+        size_t feature_vector_size = data->at(j)->get_feature_vector_size();
+
+        // Access the output double vector and resize it
+        auto& feature_vector_double = *data->at(j)->get_features_double();
+        feature_vector_double.resize(feature_vector_size); // Resize to match input size
+
+        // Copy and convert each element
+        for (size_t i = 0; i < feature_vector_size; i++) {
+            feature_vector_double[i] = static_cast<double>(feature_vector[i]);
+        }
+    }
+}
+
+
 uint32_t data_handler::get_little_endian(const unsigned char * bytes){
     return (uint32_t) ((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | (bytes[3]));
 }
