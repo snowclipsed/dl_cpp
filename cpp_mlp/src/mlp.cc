@@ -121,11 +121,15 @@ mlp::network_params* mlp::init_network(network_params* params, std::vector<Data*
     /**
      * To write an init function first we need to allocate memory for the weights using malloc.
     */
-
-    for(int i = 0; i<train.size(); i++){
-        convertVector(train[i]->get_features(), params->features);
-    }
-
+    
+    params->num_weights = INPUT_DIM * HIDDEN_LAYER_SIZE + HIDDEN_LAYER_SIZE*HIDDEN_LAYER_SIZE*(NUM_HIDDEN_LAYERS-1) + HIDDEN_LAYER_SIZE*OUTPUT_DIM;
+    params->num_activations = HIDDEN_LAYER_SIZE*NUM_HIDDEN_LAYERS + OUTPUT_DIM;
+    params->num_biases = HIDDEN_LAYER_SIZE*NUM_HIDDEN_LAYERS + OUTPUT_DIM;
+    params->weights.resize(params->num_weights);
+    params->biases.resize(params->num_biases);
+    params->logits.resize(params->num_activations);
+    params->gamma.resize(params->num_activations);
+    params->beta.resize(params->num_activations);
     params->norm_logits.resize(params->num_activations);
     params->scaled_logits.resize(params->num_activations);
     params->activations.resize(params->num_activations);
@@ -240,17 +244,6 @@ return params->activations;
 }
 
 
-
-// std::vector<double*> convertVector(const std::vector<uint8_t>* input, std::vector<double*> output) {
-//     // LOG_F(0, "Converting uint_8* vector to double* vector");
-    
-//         for (uint8_t value : *input) {
-//             double* ptr = new double(static_cast<double>(value));
-//             output.push_back(ptr);
-//         }
-//         // LOG_F(0, "Converted uint_8* vector to double* vector");
-//         return output;
-//     }
 
 void convertVector(const std::vector<uint8_t>* inputVector, std::vector<double*>& outputVector) {
     // Check if the input vector pointer is not null
