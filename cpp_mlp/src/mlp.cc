@@ -104,6 +104,7 @@ class mlp{
         std::vector<double*> mat_mul_error_term(network_params* params, int activation_offset, int weight_offset, int dim1);
         void mat_mul_grad(network_params* params, int activation_offset, int weight_offset, int logit_offset, int dim1, int dim2);
         void mat_mul_grad(network_params* params, std::vector<double*> features, int activation_offset, int weight_offset, int logit_offset, int dim1, int dim2);
+        int update_params(network_params* params, int weight_offset, int bias_offset, int index, int dim1, int dim2);
 };
 
 mlp::mlp(){
@@ -567,7 +568,19 @@ void mlp::mat_mul_grad(network_params* params, std::vector<double*> features, in
 }
 
 
+int mlp::update_params(network_params* params, int weight_offset, int bias_offset, int index, int dim1, int dim2){
+    for(int i = 0; i<dim2; i++){
+        for(int j = 0; j<dim1; j++){
+            index = i*dim1 + j;
+            *params->weights[weight_offset + index] -= LEARNING_RATE * *params->weight_gradients[weight_offset + index];
+        }
+    }
 
+    for(int i = 0; i<dim2; i++){
+        *params->bias_gradients[bias_offset + i] -= LEARNING_RATE * *params->bias_gradients[bias_offset + i];
+    }
+return index;
+}
 
 
 void mlp::backward_pass(network_params* params, std::vector<Data*> batch){
@@ -591,17 +604,21 @@ void mlp::backward_pass(network_params* params, std::vector<Data*> batch){
         
         convertVector(batch[image]->get_features(), features);
 
+        /*
+        Calculating error terms.
+        */
 
+        // output layer
         mat_mul_error_term(params, activation_offset, weight_offset, OUTPUT_DIM);
 
-        //calculate the error term for last hidden layer
+        // last hidden layer
         previous_error_offset = activation_offset;
         activation_offset = params->num_activations-(OUTPUT_DIM+HIDDEN_LAYER_SIZE);
         weight_offset = params->num_weights-(output_weights_size);
         mat_mul_error_term(params, activation_offset, weight_offset, previous_error_offset, OUTPUT_DIM, HIDDEN_LAYER_SIZE);
 
 
-        //calculate the error term for the other hidden layers
+        //other hidden layers
         for(layer = 0; layer < NUM_HIDDEN_LAYERS-1; layer++){
             previous_error_offset = activation_offset;
             activation_offset -= HIDDEN_LAYER_SIZE;
@@ -630,44 +647,24 @@ void mlp::backward_pass(network_params* params, std::vector<Data*> batch){
         }
         
         // input layer
-
         mat_mul_grad(params, features, activation_offset, weight_offset, logit_offset, INPUT_DIM, HIDDEN_LAYER_SIZE);
 
     }   
 
     weight_offset = params->num_weights - output_weights_size;
-    int index = 0;
-    for(i = 0; i<OUTPUT_DIM; i++){
-        for(j = 0; j<HIDDEN_LAYER_SIZE; j++){
-            index = i*HIDDEN_LAYER_SIZE + j;
-            *params->weights[weight_offset + index] -= LEARNING_RATE * *params->weight_gradients[weight_offset + index];
-        }
-    }
-
     int bias_offset = params->num_biases - OUTPUT_DIM;
-    for(i = 0; i<OUTPUT_DIM; i++){
-        *params->bias_gradients[bias_offset + i] -= LEARNING_RATE * *params->bias_gradients[bias_offset + i];
-    }
 
+    int index = 0;
+
+    index = update_params(params, weight_offset, bias_offset, 0, HIDDEN_LAYER_SIZE, OUTPUT_DIM);
     for(layer = 0; layer<NUM_HIDDEN_LAYERS-1; layer++){
         weight_offset -= hidden_weights_size;
         bias_offset -= HIDDEN_LAYER_SIZE;
-        // LOG_F(0, "weight_offset: %d, bias_offset: %d", weight_offset, bias_offset);
-        for(i = 0; i<HIDDEN_LAYER_SIZE; i++){
-            for(j = 0; j<HIDDEN_LAYER_SIZE; j++){
-                index = i*HIDDEN_LAYER_SIZE + j;
-                *params->weights[weight_offset + index] -= LEARNING_RATE * *params->weight_gradients[weight_offset + index];
-            }
-        }
-
-        for(i = 0; i<HIDDEN_LAYER_SIZE; i++){
-            *params->bias_gradients[bias_offset + i] -= LEARNING_RATE * *params->bias_gradients[bias_offset + i];
-        }
+        index = update_params(params, weight_offset, bias_offset, index, HIDDEN_LAYER_SIZE, HIDDEN_LAYER_SIZE);
     }
 
     weight_offset -= input_weights_size;
-    // LOG_F(0, "weight_offset: %d, bias_offset: %d", weight_offset, bias_offset);
-    
+
     for(i = 0; i<HIDDEN_LAYER_SIZE; i++){
         for(j = 0; j<INPUT_DIM; j++){
             index = i*INPUT_DIM + j;
@@ -678,10 +675,6 @@ void mlp::backward_pass(network_params* params, std::vector<Data*> batch){
     for(i = 0; i<HIDDEN_LAYER_SIZE; i++){
         *params->bias_gradients[bias_offset + i] -= LEARNING_RATE * *params->bias_gradients[bias_offset + i];
     }
-
-
-
-
 
 
 }
